@@ -22,6 +22,11 @@ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 
+# ==========================================
+# ++ 新增：匯入 HTD 模組 ++
+# ==========================================
+from openpilot.sunnypilot.selfdrive.controls.lib.human_turn_detection import HumanTurnDetection, HTDState
+
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
@@ -42,7 +47,7 @@ class Controls(ControlsExt):
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
     self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
-                                   'liveCalibration', 'livePose', 'longitudinalPlan', 'lateralManeuverPlan', 'carState', 'carOutput',
+                                   'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
                                    'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay'] + self.sm_services_ext,
                                   poll='selfdriveState')
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
@@ -65,6 +70,12 @@ class Controls(ControlsExt):
       self.LaC = LatControlTorque(self.CP, self.CP_SP, self.CI, DT_CTRL)
 
     self.LaC = ControlsExt.initialize_lateral_control(self, self.LaC, self.CI, DT_CTRL)
+
+    # ==========================================
+    # ++ 新增：初始化 HTD ++
+    # ==========================================
+    self.htd = HumanTurnDetection()
+    self.htd_state = HTDState.INACTIVE
 
   def update(self):
     self.sm.update(15)
@@ -96,7 +107,6 @@ class Controls(ControlsExt):
         self.LaC.extension.update_limits()
 
       self.LaC.extension.update_model_v2(self.sm['modelV2'])
-
       self.LaC.extension.update_lateral_lag(self.lat_delay)
 
     long_plan = self.sm['longitudinalPlan']
@@ -110,6 +120,24 @@ class Controls(ControlsExt):
 
     # Get which state to use for active lateral control
     _lat_active = self.get_lat_active(self.sm)
+
+    # ==========================================
+    # ++ 新增：HTD (人工接管大轉彎判斷) 邏輯 ++
+    # ==========================================
+    # 1. 永遠執行 update 以記錄扭力與角度數據
+    htd_allowed, self.htd_state = self.htd.update(
+        _lat_active, 
+        CS.cruiseState.enabled, 
+        CS.steeringAngleDeg, 
+        CS.steeringTorque, 
+        CS.vEgo, 
+        CS.steeringPressed
+    )
+    
+    # 2. 如果 HTD 有在 UI 啟用，則根據判斷結果覆寫 _lat_active
+    if self.htd._enabled:
+        _lat_active = _lat_active and htd_allowed
+    # ==========================================
 
     CC.latActive = _lat_active and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
                    (not standstill or self.CP.steerAtStandstill)
@@ -135,11 +163,7 @@ class Controls(ControlsExt):
                                             pid_accel_limits, freeze_integrator=override_longitudinal))
 
     # Steering PID loop and lateral MPC
-    # Reset desired curvature to current to avoid violating the limits on engage
-    if self.sm.valid['lateralManeuverPlan']:
-      new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
-    else:
-      new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
@@ -149,6 +173,7 @@ class Controls(ControlsExt):
                                                        self.calibrated_pose, curvature_limited, lat_delay)
     actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
+
     # Ensure no NaNs/Infs
     for p in ACTUATOR_FIELDS:
       attr = getattr(actuators, p)
@@ -165,7 +190,6 @@ class Controls(ControlsExt):
     CS = self.sm['carState']
 
     # Orientation and angle rates can be useful for carcontroller
-    # Only calibrated (car) frame is relevant for the carcontroller
     CC.currentCurvature = self.curvature
     if self.calibrated_pose is not None:
       CC.orientationNED = self.calibrated_pose.orientation.xyz.tolist()
@@ -196,9 +220,6 @@ class Controls(ControlsExt):
                                               STEER_ANGLE_SATURATION_THRESHOLD
       else:
         self.steer_limited_by_safety = abs(CC.actuators.torque - CO.actuatorsOutput.torque) > 1e-2
-
-    # TODO: both controlsState and carControl valids should be set by
-    #       sm.all_checks(), but this creates a circular dependency
 
     # controlsState
     dat = messaging.new_message('controlsState')
