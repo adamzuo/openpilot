@@ -193,8 +193,8 @@ class CruiseLayout(Widget):
         self.dp_accel_personality_en_toggle.action_item.set_enabled(has_long)
       else:
         ui_state.params.remove("CustomAccIncrementsEnabled")
-        ui_state.params.remove("DynamicExperimentalControl")
-        ui_state.params.remove("SmartCruiseControlVision")
+        #ui_state.params.remove("DynamicExperimentalControl")
+        #ui_state.params.remove("SmartCruiseControlVision")
         ui_state.params.remove("SmartCruiseControlMap")
         
         # 移除並禁用 DP 功能
