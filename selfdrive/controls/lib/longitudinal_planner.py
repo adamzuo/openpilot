@@ -17,6 +17,11 @@ from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 
+# ==========================================
+# ++ 新增：匯入 SP APM 模組 (已更新路徑) ++
+# ==========================================
+from openpilot.sunnypilot.selfdrive.controls.lib.apm import APM
+
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
@@ -64,6 +69,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
     self.j_desired_trajectory = np.zeros(CONTROL_N)
+
+    # ==========================================
+    # ++ 新增：初始化 APM ++
+    # ==========================================
+    self.apm = APM()
 
   @staticmethod
   def parse_model(model_msg):
@@ -135,9 +145,26 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if force_slow_decel:
       v_cruise = 0.0
 
-    self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
+    # ==========================================
+    # ++ 新增：APM 邏輯 (取得動態 Personality) ++
+    # ==========================================
+    personality = sm['selfdriveState'].personality
+
+    # 擷取前車資訊
+    lead_one = sm['radarState'].leadOne
+    has_lead = lead_one.status
+    v_lead = lead_one.vLead if has_lead else 0.0
+    a_lead = lead_one.aLeadK if has_lead else 0.0
+    d_lead = lead_one.dRel if has_lead else 0.0
+    
+    # 透過 APM 取得動態 personality 覆寫原本的設定
+    personality = self.apm.get_personality(v_ego, has_lead, v_lead, a_lead, d_lead, personality)
+    # ==========================================
+
+    # 將覆寫後的 personality 傳入 MPC
+    self.mpc.set_weights(prev_accel_constraint, personality=personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
-    self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality)
+    self.mpc.update(sm['radarState'], v_cruise, personality=personality)
 
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
