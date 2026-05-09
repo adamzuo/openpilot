@@ -11,7 +11,7 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.common.params import Params
 
 # 定義加速度性格的列舉值
-AccelPersonality = custom.LongitudinalPlanDP.AccelerationPersonality
+AccelPersonality = custom.LongitudinalPlanSP.AccelerationPersonality
 ACCEL_PERSONALITY_OPTIONS = [AccelPersonality.eco, AccelPersonality.normal, AccelPersonality.sport]
 # Acceleration Profiles
 MAX_ACCEL_PROFILES = {
