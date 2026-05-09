@@ -17,6 +17,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
+
 #: selfdrive/ui/layouts/settings/device.py:160
 #, python-format
 msgid " Steering torque response calibration is complete."
@@ -2720,6 +2721,7 @@ msgstr "觸發角度"
 
 msgid "Driver steering angle that triggers HTD (degrees)."
 msgstr "觸發人工轉彎檢測的方向盤角度（度）。"
+msgid "Dynamic Follow Mode (DFM)"
 
 msgid "Dynamic Accel Personality"
 msgstr "動態加速度模式開關"
@@ -2732,7 +2734,6 @@ msgstr "動態加速度模式"
 
 msgid "Dynamic acceleration selection mode"
 msgstr "動態加速度選擇模式"
-
 
 msgid "Adaptive Personality Mode (APM)"
 msgstr "自適駕駛風格 (APM)"
