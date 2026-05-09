@@ -92,7 +92,7 @@ class RelDistElement(LeadInfoElement):
     lead_status, lead_d_rel, _ = self.get_lead_status(sm)
     value = f"{lead_d_rel:.0f}" if lead_status else "-"
     color = self.get_lead_color(lead_d_rel) if lead_status else rl.WHITE
-    return UiElement(value, "前车距离", self.unit, color)
+    return UiElement(value, "前車距離", self.unit, color)
 
 
 class RelSpeedElement(LeadInfoElement):
@@ -108,7 +108,7 @@ class RelSpeedElement(LeadInfoElement):
     value = f"{lead_v_rel * conversion:.0f}" if lead_status else "-"
     color = self.get_lead_color(0, lead_v_rel, use_v_rel=True) if lead_status else rl.WHITE
 
-    return UiElement(value, "相对速度", self.unit, color)
+    return UiElement(value, "相對速度", self.unit, color)
 
 
 class SteeringAngleElement(LateralControlElement):
@@ -124,7 +124,7 @@ class SteeringAngleElement(LateralControlElement):
     value = f"{angle_steers:.1f}°"
     color = self.get_lat_color(lat_active, steer_override, angle_steers, check_angle=True)
 
-    return UiElement(value, "转向角度", self.unit, color)
+    return UiElement(value, "轉向角度", self.unit, color)
 
 
 class DesiredSteeringAngleElement(LateralControlElement):
@@ -149,7 +149,7 @@ class DesiredSteeringAngleElement(LateralControlElement):
       else:
         color = rl.Color(0, 255, 0, 200)
 
-    return UiElement(value, "期望转向角", self.unit, color)
+    return UiElement(value, "期望轉向角", self.unit, color)
 
 
 class ActualLateralAccelElement(LateralControlElement):
@@ -168,7 +168,7 @@ class ActualLateralAccelElement(LateralControlElement):
     value = f"{actual_lat_accel:.2f}"
     color = self.get_lat_color(lat_active, steer_override)
 
-    return UiElement(value, "横向加速", self.unit, color)
+    return UiElement(value, "橫向加速", self.unit, color)
 
 
 class DesiredLateralAccelElement(LateralControlElement):
@@ -187,7 +187,7 @@ class DesiredLateralAccelElement(LateralControlElement):
     value = f"{desired_lat_accel:.2f}" if lat_active else "-"
     color = self.get_lat_color(lat_active, steer_override)
 
-    return UiElement(value, "期望横向加速", self.unit, color)
+    return UiElement(value, "期望橫向加速", self.unit, color)
 
 
 class DesiredSteeringPIDElement(LateralControlElement):
@@ -212,7 +212,7 @@ class DesiredSteeringPIDElement(LateralControlElement):
       else:
         color = rl.Color(0, 255, 0, 200)
 
-    return UiElement(value, "期望转向角", self.unit, color)
+    return UiElement(value, "期望轉向角", self.unit, color)
 
 
 class AEgoElement:
@@ -239,7 +239,7 @@ class LeadSpeedElement(LeadInfoElement):
     value = f"{(lead_v_rel + v_ego) * conversion:.0f}" if lead_status else "-"
     color = self.get_lead_color(0, lead_v_rel, use_v_rel=True) if lead_status else rl.WHITE
 
-    return UiElement(value, "参考车速", self.unit, color)
+    return UiElement(value, "參考車速", self.unit, color)
 
 
 class FrictionCoefficientElement:
@@ -248,12 +248,12 @@ class FrictionCoefficientElement:
 
   def update(self, sm, is_metric: bool) -> UiElement:
     if ui_state.enforce_torque_control and ui_state.custom_torque_params and ui_state.torque_override_enabled:
-      return UiElement(f"{ui_state.torque_override_friction:.3f}", "摩擦系数", self.unit, rl.WHITE)
+      return UiElement(f"{ui_state.torque_override_friction:.3f}", "摩擦係數", self.unit, rl.WHITE)
 
     ltp = sm['liveTorqueParameters']
     value = f"{ltp.frictionCoefficientFiltered:.3f}"
     color = rl.Color(0, 255, 0, 200) if ltp.liveValid else rl.WHITE
-    return UiElement(value, "摩擦系数", self.unit, color)
+    return UiElement(value, "摩擦係數", self.unit, color)
 
 
 class StorageElement:
@@ -262,7 +262,7 @@ class StorageElement:
 
   def update(self, sm, is_metric: bool) -> UiElement:
     if not sm.valid['deviceState']:
-      return UiElement("-", "剩余存储", self.unit, rl.WHITE)
+      return UiElement("-", "剩餘存儲", self.unit, rl.WHITE)
 
     free_percent = float(sm['deviceState'].freeSpacePercent)
     value = f"{int(round(free_percent))}"
@@ -275,7 +275,7 @@ class StorageElement:
     else:
       color = rl.Color(0, 255, 0, 200)
 
-    return UiElement(value, "剩余存储", self.unit, color)
+    return UiElement(value, "剩餘存儲", self.unit, color)
 
 
 class MemoryUsageElement:
@@ -284,7 +284,7 @@ class MemoryUsageElement:
 
   def update(self, sm, is_metric: bool) -> UiElement:
     if not sm.valid['deviceState']:
-      return UiElement("-", "内存占用", self.unit, rl.WHITE)
+      return UiElement("-", "內存佔用", self.unit, rl.WHITE)
 
     mem_percent = int(round(sm['deviceState'].memoryUsagePercent))
     value = f"{mem_percent}"
@@ -297,7 +297,7 @@ class MemoryUsageElement:
     else:
       color = rl.Color(0, 255, 0, 200)
 
-    return UiElement(value, "内存占用", self.unit, color)
+    return UiElement(value, "內存佔用", self.unit, color)
 
 
 class LatAccelFactorElement:
@@ -306,12 +306,12 @@ class LatAccelFactorElement:
 
   def update(self, sm, is_metric: bool) -> UiElement:
     if ui_state.enforce_torque_control and ui_state.custom_torque_params and ui_state.torque_override_enabled:
-      return UiElement(f"{ui_state.torque_override_lat_accel_factor:.3f}", "实时扭矩", self.unit, rl.WHITE)
+      return UiElement(f"{ui_state.torque_override_lat_accel_factor:.3f}", "實時扭矩", self.unit, rl.WHITE)
 
     ltp = sm['liveTorqueParameters']
     value = f"{ltp.latAccelFactorFiltered:.3f}"
     color = rl.Color(0, 255, 0, 200) if ltp.liveValid else rl.WHITE
-    return UiElement(value, "实时扭矩", self.unit, color)
+    return UiElement(value, "實時扭矩", self.unit, color)
 
 
 class CpuTempMaxElement:
@@ -320,7 +320,7 @@ class CpuTempMaxElement:
 
   def update(self, sm, is_metric: bool) -> UiElement:
     if not sm.valid['deviceState']:
-      return UiElement("-", "CPU温度", self.unit, rl.WHITE)
+      return UiElement("-", "CPU溫度", self.unit, rl.WHITE)
 
     # cpuTempC is a list (multiple cores), get the maximum temperature
     cpu_temps = sm['deviceState'].cpuTempC
@@ -337,7 +337,7 @@ class CpuTempMaxElement:
     else:
       color = rl.Color(0, 255, 0, 200)
 
-    return UiElement(value, "CPU温度", self.unit, color)
+    return UiElement(value, "CPU溫度", self.unit, color)
 
 
 class SteeringTorqueEpsElement:
