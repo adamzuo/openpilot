@@ -99,11 +99,19 @@ class OCM:
     return (not user_ctrl_lon and not self._has_lead and 
             not in_cooldown and self._is_speed_over_cruise)
 
-  def update_states(self, cc, rs, user_ctrl_lon, v_ego, v_cruise):
+  def update_states(self, cc, rs, user_ctrl_lon, v_ego, v_cruise, sccv_active):
     if not self.enabled:
       self.active = False
       return
       
+    # =========================================================
+    # ++ 新增：如果 SCC-V 正在過彎主動介入，強制關閉 OCM 停止滑行 ++
+    # =========================================================
+    if sccv_active:
+      self.active = False
+      self._active_prev = False
+      return
+
     # 每次更新先讀取坡度
     self._update_pitch(cc.orientationNED)
       
