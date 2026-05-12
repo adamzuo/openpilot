@@ -18,8 +18,9 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 
 # =========================================================
-# ++ 新增：匯入 SP 擴充模組 ++
+# ++ 新增：匯入 SP 擴充模組與 Params ++
 # =========================================================
+from openpilot.common.params import Params
 from openpilot.sunnypilot.selfdrive.controls.lib.apm import APM
 from openpilot.sunnypilot.selfdrive.controls.lib.ocm import OCM  # 請確保 ocm.py 已放入該目錄
 
@@ -66,11 +67,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.j_desired_trajectory = np.zeros(CONTROL_N)
 
     # =========================================================
-    # ++ 初始化：APM 與 OCM ++
+    # ++ 初始化：APM 與 OCM 模組 ++
     # =========================================================
+    self.params = Params()
     self.apm = APM()
     self.ocm = OCM()
-    self.ocm.enabled = True # 預設開啟
+    
+    # 預先讀取開關狀態
+    self.ocm.enabled = self.params.get_bool("dp_lon_ocm")
+    self.apm_enabled = self.params.get_bool("dp_lon_apm")
+    self.update_counter = 0  # 設置計數器以降低 Params 讀取頻率
 
   @staticmethod
   def parse_model(model_msg):
@@ -89,6 +95,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
   def update(self, sm):
     LongitudinalPlannerSP.update(self, sm)
+
+    # =========================================================
+    # ++ 開關狀態更新 (每 400 幀 = 20 秒讀取一次，極致省效能) ++
+    # =========================================================
+    self.update_counter += 1
+    if self.update_counter >= 400:
+      self.ocm.enabled = self.params.get_bool("dp_lon_ocm")
+      self.apm_enabled = self.params.get_bool("dp_lon_apm")
+      self.update_counter = 0
 
     if len(sm['carControl'].orientationNED) == 3:
       accel_coast = get_coast_accel(sm['carControl'].orientationNED[1])
@@ -131,19 +146,20 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       v_cruise = 0.0
 
     # =========================================================
-    # ++ 執行：APM 動態 Personality ++
+    # ++ 執行：APM 動態 Personality 覆寫 ++
     # =========================================================
     personality = sm['selfdriveState'].personality
-    lead_one = sm['radarState'].leadOne
-    personality = self.apm.get_personality(v_ego, lead_one.status, lead_one.vLead, lead_one.aLeadK, lead_one.dRel, personality)
+    if self.apm_enabled:
+      lead_one = sm['radarState'].leadOne
+      personality = self.apm.get_personality(v_ego, lead_one.status, lead_one.vLead, lead_one.aLeadK, lead_one.dRel, personality)
 
     # =========================================================
-    # ++ 執行：OCM 狀態更新 ++
+    # ++ 執行：OCM 狀態判定與更新 ++
     # =========================================================
     user_control = long_control_off if self.CP.openpilotLongitudinalControl else not sm['selfdriveState'].enabled
     self.ocm.update_states(sm['carControl'], sm['radarState'], user_control, v_ego, v_cruise)
 
-    # 將 personality 傳入 MPC
+    # 將覆寫後的 personality 傳入 MPC
     self.mpc.set_weights(prev_accel_constraint, personality=personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
     self.mpc.update(sm['radarState'], v_cruise, personality=personality)
@@ -182,10 +198,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')
     plan_send.valid = sm.all_checks(service_list=['carState', 'controlsState', 'selfdriveState', 'radarState'])
+    
     lp = plan_send.longitudinalPlan
+    lp.modelMonoTime = sm.logMonoTime['modelV2']
+    lp.processingDelay = (plan_send.logMonoTime / 1e9) - sm.logMonoTime['modelV2']
+    lp.solverExecutionTime = self.mpc.solve_time
+    
     lp.speeds, lp.accels, lp.jerks = self.v_desired_trajectory.tolist(), self.a_desired_trajectory.tolist(), self.j_desired_trajectory.tolist()
-    lp.hasLead, lp.fcw = sm['radarState'].leadOne.status, self.fcw
+    lp.hasLead, lp.longitudinalPlanSource, lp.fcw = sm['radarState'].leadOne.status, self.mpc.source, self.fcw
     lp.aTarget, lp.shouldStop = float(self.output_a_target), bool(self.output_should_stop)
     lp.allowBrake, lp.allowThrottle = True, bool(self.allow_throttle)
+    
     pm.send('longitudinalPlan', plan_send)
     self.publish_longitudinal_plan_sp(sm, pm)
