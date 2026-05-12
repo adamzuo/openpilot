@@ -23,6 +23,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import Lon
 from openpilot.common.params import Params
 from openpilot.sunnypilot.selfdrive.controls.lib.apm import APM
 from openpilot.sunnypilot.selfdrive.controls.lib.ocm import OCM  # 請確保 ocm.py 已放入該目錄
+from openpilot.sunnypilot.selfdrive.controls.lib.asc import ASCLogic # ++ 新增：匯入 ASC 模組 ++
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
@@ -67,15 +68,17 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.j_desired_trajectory = np.zeros(CONTROL_N)
 
     # =========================================================
-    # ++ 初始化：APM 與 OCM 模組 ++
+    # ++ 初始化：APM、OCM 與 ASC 模組 ++
     # =========================================================
     self.params = Params()
     self.apm = APM()
     self.ocm = OCM()
+    self.asc = ASCLogic() # ++ 新增：初始化 ASC ++
     
     # 預先讀取開關狀態
     self.ocm.enabled = self.params.get_bool("dp_lon_ocm")
     self.apm_enabled = self.params.get_bool("dp_lon_apm")
+    self.asc_enabled = self.params.get_bool("dp_lon_asc") # ++ 新增：讀取 ASC 開關 ++
     self.update_counter = 0  # 設置計數器以降低 Params 讀取頻率
 
   @staticmethod
@@ -103,11 +106,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if self.update_counter >= 400:
       self.ocm.enabled = self.params.get_bool("dp_lon_ocm")
       self.apm_enabled = self.params.get_bool("dp_lon_apm")
+      self.asc_enabled = self.params.get_bool("dp_lon_asc") # ++ 新增 ++
       self.update_counter = 0
 
+    # ++ 新增：提取當前坡度值供給 ASC 與 coast_accel 使用 ++
     if len(sm['carControl'].orientationNED) == 3:
-      accel_coast = get_coast_accel(sm['carControl'].orientationNED[1])
+      current_pitch = sm['carControl'].orientationNED[1]
+      accel_coast = get_coast_accel(current_pitch)
     else:
+      current_pitch = 0.0
       accel_coast = ACCEL_MAX
 
     v_ego = sm['carState'].vEgo
@@ -145,12 +152,14 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if force_slow_decel:
       v_cruise = 0.0
 
+    # ++ 新增：將前車狀態提取出來，供 APM 與 ASC 共用 ++
+    lead_one = sm['radarState'].leadOne
+
     # =========================================================
     # ++ 執行：APM 動態 Personality 覆寫 ++
     # =========================================================
     personality = sm['selfdriveState'].personality
     if self.apm_enabled:
-      lead_one = sm['radarState'].leadOne
       personality = self.apm.get_personality(v_ego, lead_one.status, lead_one.vLead, lead_one.aLeadK, lead_one.dRel, personality)
 
     # =========================================================
@@ -173,6 +182,21 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # ++ 執行：OCM 軌跡介入 (實現超車滑行) ++
     # =========================================================
     self.a_desired_trajectory = self.ocm.update_a_desired_trajectory(self.a_desired_trajectory)
+
+    # =========================================================
+    # ++ 執行：ASC 軌跡介入 (自適應車速控制/強迫滑行) ++
+    # =========================================================
+    if self.asc_enabled:
+      # 將 personality 轉換為對應的跟車秒數 t_follow (0: 1.2s, 1: 1.45s, 2: 1.8s)
+      t_follow = {0: 1.2, 1: 1.45, 2: 1.8}.get(personality, 1.45)
+      
+      self.a_desired_trajectory = self.asc.process_trajectory(
+          self.a_desired_trajectory, 
+          v_ego, 
+          lead_one, 
+          current_pitch, 
+          t_follow
+      )
 
     self.j_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC[:-1], self.mpc.j_solution)
     self.fcw = self.mpc.crash_cnt > 2 and not sm['carState'].standstill
