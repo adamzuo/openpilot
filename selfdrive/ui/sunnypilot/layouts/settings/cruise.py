@@ -99,7 +99,7 @@ class CruiseLayout(Widget):
     # ++ 新增：ASC UI 開關 ++
     self.asc_toggle = toggle_item_sp(
       title=tr("Adaptive Speed Control (ASC)"),
-      description=tr("Dynamically cap acceleration to enable smooth coasting and prevent unnecessary slight accelerations."),
+      description=tr("Dynamically cap acceleration within the following distance to enable smooth coasting and prevent unnecessary slight accelerations."),
       param="dp_lon_asc")
 
     self.dp_apm_toggle = toggle_item_sp(
