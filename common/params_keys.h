@@ -285,4 +285,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"AccelPersonalityEnabled", {PERSISTENT, BOOL, "1"}},
     {"dp_lon_ocm", {PERSISTENT, BOOL, "0"}},
     {"dp_lon_apm", {PERSISTENT, BOOL, "0"}},
+    {"dp_lon_asc", {PERSISTENT, BOOL, "0"}},
+
 };
