@@ -2802,3 +2802,9 @@ msgstr "自适驾驶风格 (APM)"
 
 msgid "The mode automatically switches based on the vehicle in front. It is recommended to maintain the standard mode."
 msgstr "自动根据前车动态切换风格。建议维持标准模式。"
+
+msgid "Overtaking Coasting Mode (OCM)"
+msgstr "超车滑行模式 (OCM)"
+
+msgid "Smoothly coast down to your set speed without engine braking when you exceed the cruise speed by 20 km/h after overtaking."
+msgstr "超车后，如果车速超过巡航速度 20 公里/小时，将平稳滑行至设定速度，不使用刹车。"
