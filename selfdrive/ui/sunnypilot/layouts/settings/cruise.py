@@ -96,6 +96,12 @@ class CruiseLayout(Widget):
       description=tr("Smoothly coast down to your set speed without engine braking when you exceed the cruise speed by 20 km/h after overtaking."),
       param="dp_lon_ocm")
 
+    # ++ 新增：ASC UI 開關 ++
+    self.asc_toggle = toggle_item_sp(
+      title=tr("Adaptive Speed Control (ASC)"),
+      description=tr("Dynamically cap acceleration to enable smooth coasting and prevent unnecessary slight accelerations."),
+      param="dp_lon_asc")
+
     self.dp_apm_toggle = toggle_item_sp(
       title=tr("Adaptive Personality Mode (APM)"),
       description=tr("The mode automatically switches based on the vehicle in front. It is recommended to maintain the standard mode."),
@@ -125,6 +131,7 @@ class CruiseLayout(Widget):
       self.custom_acc_long_increment,
       self.sla_settings_button,
       self.ocm_toggle,    
+      self.asc_toggle, # ++ 新增到清單中 ++
       self.dp_apm_toggle, 
       self.dp_accel_personality_en_toggle,
       self.dp_accel_personality_option,
@@ -146,6 +153,7 @@ class CruiseLayout(Widget):
     self.scc_v_toggle.show_description(True)
     self.scc_m_toggle.show_description(True)
     self.ocm_toggle.show_description(True)
+    self.asc_toggle.show_description(True) # ++ 新增顯示描述 ++
     self.dp_apm_toggle.show_description(True)
     self.dp_accel_personality_en_toggle.show_description(True)
 
@@ -186,12 +194,14 @@ class CruiseLayout(Widget):
         self.scc_v_toggle.action_item.set_enabled(True)
         self.scc_m_toggle.action_item.set_enabled(True)
         self.ocm_toggle.action_item.set_enabled(has_long)
+        self.asc_toggle.action_item.set_enabled(has_long) # ++ 新增啟用狀態 ++
         self.dp_apm_toggle.action_item.set_enabled(has_long)
         self.dp_accel_personality_en_toggle.action_item.set_enabled(has_long)
       else:
         ui_state.params.remove("CustomAccIncrementsEnabled")
         ui_state.params.remove("SmartCruiseControlMap")
         ui_state.params.remove("dp_lon_ocm") 
+        ui_state.params.remove("dp_lon_asc") # ++ 新增移除參數 ++
         ui_state.params.remove("dp_lon_apm")
         ui_state.params.remove("AccelPersonalityEnabled")
         ui_state.params.remove("AccelPersonality")
@@ -201,6 +211,7 @@ class CruiseLayout(Widget):
         self.scc_v_toggle.action_item.set_enabled(False)
         self.scc_m_toggle.action_item.set_enabled(False)
         self.ocm_toggle.action_item.set_enabled(False)
+        self.asc_toggle.action_item.set_enabled(False) # ++ 新增停用狀態 ++
         self.dp_apm_toggle.action_item.set_enabled(False)
         self.dp_accel_personality_en_toggle.action_item.set_enabled(False)
 
