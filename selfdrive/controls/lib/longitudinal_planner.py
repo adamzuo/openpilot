@@ -157,7 +157,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # ++ 執行：OCM 狀態判定與更新 ++
     # =========================================================
     user_control = long_control_off if self.CP.openpilotLongitudinalControl else not sm['selfdriveState'].enabled
-    self.ocm.update_states(sm['carControl'], sm['radarState'], user_control, v_ego, v_cruise)
+    
+    # 傳入 SCC-V vision 狀態給 OCM
+    self.ocm.update_states(sm['carControl'], sm['radarState'], user_control, v_ego, v_cruise, self.scc.vision.is_active)
 
     # 將覆寫後的 personality 傳入 MPC
     self.mpc.set_weights(prev_accel_constraint, personality=personality)
