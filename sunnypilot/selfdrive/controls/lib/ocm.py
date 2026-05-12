@@ -20,7 +20,8 @@ MIN_DIST_V = [5., 10., 15., 20.]
 
 # 坡度參數 (移植自新版 ACM)
 PITCH_SMOOTH_ALPHA_UP = 0.30           
-PITCH_SMOOTH_ALPHA_DOWN = 0.05         
+# ++ 修改：提高下坡反應靈敏度，從 0.05 提升至 0.15 ++
+PITCH_SMOOTH_ALPHA_DOWN = 0.15
 PITCH_DOWNHILL_THRESHOLD = -0.030      # 判定為下坡的閾值 (-3% 坡度)
 
 
