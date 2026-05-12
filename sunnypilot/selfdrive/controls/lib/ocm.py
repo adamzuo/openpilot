@@ -7,7 +7,7 @@ from openpilot.common.swaglog import cloudlog
 # =========================================================
 OVERTAKE_THRESHOLD = 20.0 / 3.6  # 20 km/h - 進入超車滑行的門檻
 HYSTERESIS_OFFSET = 2.0 / 3.6    # 2 km/h - 保持滑行直到接近定速時才解除
-TTC_THRESHOLD = 3.0              # 秒 - 前方 3 秒內有車即停用
+TTC_THRESHOLD = 2.5              # 秒 - 前方 2.5 秒內有車即停用
 
 # 緊急安全防線
 EMERGENCY_TTC = 2.0
