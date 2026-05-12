@@ -2789,7 +2789,7 @@ msgid "Dynamic Follow Mode (DFM)"
 msgid "Dynamic Accel Personality"
 msgstr "動態加速度模式開關"
 
-msgid "Dynamic acceleration switch"
+msgid "Dynamic acceleration switch."
 msgstr "動態加速度模式開關"
 
 msgid "Accel Personality"
