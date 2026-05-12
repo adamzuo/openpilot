@@ -2808,3 +2808,8 @@ msgstr "超车滑行模式 (OCM)"
 
 msgid "Smoothly coast down to your set speed without engine braking when you exceed the cruise speed by 20 km/h after overtaking."
 msgstr "超车后，如果车速超过巡航速度 20 公里/小时，将平稳滑行至设定速度，不使用刹车。"
+msgid "Adaptive Speed Control (ASC)"
+msgstr "自适应车速控制 (ASC)"
+
+msgid "Dynamically cap acceleration within the following distance to enable smooth coasting and prevent unnecessary slight accelerations."
+msgstr "动态限制车距内加速上限，实现平顺滑行，并避免不必要的微加速。"
