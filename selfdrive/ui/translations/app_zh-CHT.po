@@ -2811,7 +2811,7 @@ msgid "Smoothly coast down to your set speed without engine braking when you exc
 msgstr "超車後，如果車速超過巡航速度 20 公里/小時，將平穩滑行至設定速度，不使用煞車。"
 
 msgid "Adaptive Speed Control (ASC)"
-msgstr "自适应车速控制 (ASC)"
+msgstr "自適應車速控制 (ASC)"
 
 msgid "Dynamically cap acceleration within the following distance to enable smooth coasting and prevent unnecessary slight accelerations."
-msgstr "动态限制车距内加速上限，实现平顺滑行，并避免不必要的微加速。"
+msgstr "動態限制車距內加速上限，實現平順滑行，並避免不必要的微加速。"
