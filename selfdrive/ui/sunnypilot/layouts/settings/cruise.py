@@ -88,21 +88,24 @@ class CruiseLayout(Widget):
       param="DynamicExperimentalControl")
 
     # ==========================================
-    # 移植自 DragonPilot (DP) 的縱向控制 UI 開關
+    # 客製化與移植的縱向控制 UI 開關
     # ==========================================
 
-    # [新增] APM (Adaptive Personality Mode) 開關
+    self.ocm_toggle = toggle_item_sp(
+      title=tr("Overtaking Coasting Mode (OCM)"),
+      description=tr("Smoothly coast down to your set speed without engine braking when you exceed the cruise speed by 20 km/h after overtaking."),
+      param="dp_lon_ocm")
+
     self.dp_apm_toggle = toggle_item_sp(
       title=tr("Adaptive Personality Mode (APM)"),
       description=tr("The mode automatically switches based on the vehicle in front. It is recommended to maintain the standard mode."),
       param="dp_lon_apm")
 
-    # [修正點]：強制 value_map 為整數，防止 Params 存檔時出現 Type Mismatch
     self.dp_accel_personality_option = option_item_sp(
       title=tr("Accel Personality"),
       param="AccelPersonality",
       min_value=0, max_value=2, value_change_step=1,
-      value_map={0: 0, 1: 1, 2: 2},  # 強制寫入的數值型態為整數 INT
+      value_map={0: 0, 1: 1, 2: 2},
       label_callback=lambda value: {0: tr("Sport"), 1: tr("Normal"), 2: tr("Eco")}.get(value, str(value)),
       inline=True)
 
@@ -121,8 +124,8 @@ class CruiseLayout(Widget):
       self.custom_acc_short_increment,
       self.custom_acc_long_increment,
       self.sla_settings_button,
-      # 加入 DP 選單項目
-      self.dp_apm_toggle, # 加入 APM 開關到選單
+      self.ocm_toggle,    
+      self.dp_apm_toggle, 
       self.dp_accel_personality_en_toggle,
       self.dp_accel_personality_option,
     ]
@@ -139,15 +142,11 @@ class CruiseLayout(Widget):
     self._scroller.show_event()
     self.icbm_toggle.show_description(True)
     self.custom_acc_toggle.show_description(True)
-    
-    # ===== 確保點擊時高度不會動態改變 =====
     self.dec_toggle.show_description(True)
     self.scc_v_toggle.show_description(True)
     self.scc_m_toggle.show_description(True)
-    # ====================================
-    # 確保 DP 功能顯示描述
-
-    self.dp_apm_toggle.show_description(True) # 顯示 APM 描述
+    self.ocm_toggle.show_description(True)
+    self.dp_apm_toggle.show_description(True)
     self.dp_accel_personality_en_toggle.show_description(True)
 
   def _set_current_panel(self, panel: PanelType):
@@ -186,20 +185,14 @@ class CruiseLayout(Widget):
         self.dec_toggle.action_item.set_enabled(has_long)
         self.scc_v_toggle.action_item.set_enabled(True)
         self.scc_m_toggle.action_item.set_enabled(True)
-        
-        # 開啟 DP 功能的互動狀態
-
-        self.dp_apm_toggle.action_item.set_enabled(has_long) # 啟用 APM 互動狀態
+        self.ocm_toggle.action_item.set_enabled(has_long)
+        self.dp_apm_toggle.action_item.set_enabled(has_long)
         self.dp_accel_personality_en_toggle.action_item.set_enabled(has_long)
       else:
         ui_state.params.remove("CustomAccIncrementsEnabled")
-        #ui_state.params.remove("DynamicExperimentalControl")
-        #ui_state.params.remove("SmartCruiseControlVision")
         ui_state.params.remove("SmartCruiseControlMap")
-        
-        # 移除並禁用 DP 功能
-
-        ui_state.params.remove("dp_lon_apm") # 移除 APM 參數
+        ui_state.params.remove("dp_lon_ocm") 
+        ui_state.params.remove("dp_lon_apm")
         ui_state.params.remove("AccelPersonalityEnabled")
         ui_state.params.remove("AccelPersonality")
         
@@ -207,9 +200,8 @@ class CruiseLayout(Widget):
         self.dec_toggle.action_item.set_enabled(False)
         self.scc_v_toggle.action_item.set_enabled(False)
         self.scc_m_toggle.action_item.set_enabled(False)
-        
-
-        self.dp_apm_toggle.action_item.set_enabled(False) # 禁用 APM 互動狀態
+        self.ocm_toggle.action_item.set_enabled(False)
+        self.dp_apm_toggle.action_item.set_enabled(False)
         self.dp_accel_personality_en_toggle.action_item.set_enabled(False)
 
     else:
