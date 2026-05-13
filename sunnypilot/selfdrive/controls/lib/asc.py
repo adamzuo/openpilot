@@ -15,7 +15,7 @@ INTENT_LOOKAHEAD    = 3      # 在這 6 個點中，若有 3 個點符合加速�
 INTENT_V_LOW        = 0.0    # 低速基準線 (0 km/h)
 INTENT_V_HIGH       = 22.22  # 高速基準線 (約 80 km/h, 單位: m/s)
 INTENT_FRAMES_LOW   = 0      # 低速時，需連續 0 幀立刻放行
-INTENT_FRAMES_HIGH  = 20     # 高速時，需要連續 20 幀偵測到加速才放行
+INTENT_FRAMES_HIGH  = 5     # 高速時，需要連續  5幀偵測到加速才放行
 
 # --- 坡度相關參數 ---
 PITCH_UPHILL_THRESHOLD = 0.050    # 判定為上坡的閾值 (5% 坡度)
@@ -26,8 +26,8 @@ ASC_PITCH_MAX = 0.080             # 完全取消 ASC 的最大陡坡閾值 (過�
 VREL_DEBOUNCE_TIME = 0.6          # 高速差防震盪計時器 (秒)，防止前車時速突然跳動導致誤判
 
 # --- 物理距離比例閾值 ---
-RATIO_ENTER_THRESHOLD = 1.02      # 空間充裕界線：大於 102% 時，徹底解除滑行上限限制
-RATIO_EXIT_THRESHOLD = 0.98       # 重新進入滑行判斷區間的界線
+RATIO_ENTER_THRESHOLD = 1.00      # 空間充裕界線：大於 100% 時，徹底解除滑行上限限制
+RATIO_EXIT_THRESHOLD = 0.90       # 重新進入滑行判斷區間的界線
 ASC_RANGE_MAX = 0.98              # 進入純滑行的最高界線 (低於目標 98% 啟動 ASC 鎖定，壓制加速)
 ASC_RANGE_MIN = 0.70              # 交還控制權的最低界線 (低於 70% 解鎖，交給原廠處理)
 
