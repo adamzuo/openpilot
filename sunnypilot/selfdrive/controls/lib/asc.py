@@ -23,7 +23,7 @@ PITCH_DOWNHILL_THRESHOLD = -0.030 # 判定為下坡的閾值 (-3% 坡度)
 ASC_PITCH_MAX = 0.080             # 完全取消 ASC 的最大陡坡閾值 (過陡時交給原廠處理，防止滑動)
 
 # --- 防震盪與動態保護參數 ---
-VREL_DEBOUNCE_TIME = 0.6          # 高速差防震盪計時器 (秒)，防止前車時速突然跳動導致誤判
+VREL_DEBOUNCE_TIME = 0.5          # 高速差防震盪計時器 (秒)，防止前車時速突然跳動導致誤判
 
 # --- 物理距離比例閾值 ---
 RATIO_ENTER_THRESHOLD = 1.00      # 空間充裕界線：大於 100% 時，徹底解除滑行上限限制
@@ -119,7 +119,7 @@ class ASCLogic:
             else:
                 self.intent_accelerating = False
 
-            if lead.vRel > 1.0:
+            if lead.vRel > 0.5:
                 if not self._vrel_high_active:
                     self._vrel_high_active = True
                     self._vrel_high_start_time = current_time
