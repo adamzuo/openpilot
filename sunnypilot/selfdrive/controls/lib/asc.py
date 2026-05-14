@@ -192,9 +192,9 @@ class ASCLogic:
 
             v_rel_factor = np.interp(lead.vRel, [-2.0, 0.5], [0.0, 1.0])
             target_factor = max(distance_factor, v_rel_factor)
-            alpha = 0.25 if target_factor > self._asc_factor else 0.20 
+            alpha = 0.30 if target_factor > self._asc_factor else 0.20 
         else:
-            alpha = 0.25 if target_factor > self._asc_factor else 0.20 
+            alpha = 0.30 if target_factor > self._asc_factor else 0.20 
 
         self._last_target_factor = target_factor
         
