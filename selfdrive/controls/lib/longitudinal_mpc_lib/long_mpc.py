@@ -35,21 +35,9 @@ CONSTR_DIM = 4
 X_EGO_OBSTACLE_COST = 3.
 X_EGO_COST = 0.
 V_EGO_COST = 0.
-
-# ==========================================
-# [修改開始] 滑行優化與提早減速邏輯
-# ==========================================
-# 為了促使系統優先滑行，我們給予 a_ego 極小的成本 (原為 0.)
-# 配合下方 update 迴圈中的 yref = -0.001，讓系統傾向輸出 -1e-3 (純引擎煞車) 而非 0.0 (含油門)
-A_EGO_COST = 0.5
-# 提高 Jerk (加速度變化率) 成本 (原為 5.)，嚴格限制急煞，強迫系統拉長減速過程
-J_EGO_COST = 15.
-# 大幅提高加速度改變成本 (原為 200.)，讓大腦覺得「晚煞車的代價極高」，進而提早放油門滑行
-A_CHANGE_COST = 400.
-# ==========================================
-# [修改結束]
-# ==========================================
-
+A_EGO_COST = 0.
+J_EGO_COST = 5.
+A_CHANGE_COST = 200.
 DANGER_ZONE_COST = 100.
 CRASH_DISTANCE = .25
 LEAD_DANGER_FACTOR = 0.75
@@ -325,9 +313,8 @@ class LongitudinalMpc:
     lead_xv = self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau)
     return lead_xv
 
-  def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard, a_cruise_min_override=None):
+  def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard):
     t_follow = get_T_FOLLOW(personality)
-    a_cruise_min = a_cruise_min_override if a_cruise_min_override is not None else CRUISE_MIN_ACCEL
     v_ego = self.x0[1]
     self.status = radarstate.leadOne.status or radarstate.leadTwo.status
 
@@ -342,7 +329,7 @@ class LongitudinalMpc:
 
     # Fake an obstacle for cruise, this ensures smooth acceleration to set speed
     # when the leads are no factor.
-    v_lower = v_ego + (T_IDXS * a_cruise_min * 1.05)
+    v_lower = v_ego + (T_IDXS * CRUISE_MIN_ACCEL * 1.05)
     # TODO does this make sense when max_a is negative?
     v_upper = v_ego + (T_IDXS * CRUISE_MAX_ACCEL * 1.05)
     v_cruise_clipped = np.clip(v_cruise * np.ones(N+1), v_lower, v_upper)
@@ -352,18 +339,6 @@ class LongitudinalMpc:
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
 
     self.yref[:,:] = 0.0
-
-    # ==========================================
-    # [修改開始] 滑行目標注入
-    # ==========================================
-    # 將加速度的目標參考值 (yref index 3 對應 a_ego) 設為 -1e-3
-    # 這使得 MPC 在不需要主動加速時，會自然將輸出收斂至 -1e-3，
-    # 觸發 Corolla 的純引擎煞車滑行，達到極致省油。
-    self.yref[:, 3] = -1e-3
-    # ==========================================
-    # [修改結束]
-    # ==========================================
-
     for i in range(N):
       self.solver.set(i, "yref", self.yref[i])
     self.solver.set(N, "yref", self.yref[N][:COST_E_DIM])
