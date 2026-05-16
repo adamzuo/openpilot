@@ -10,7 +10,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.constants import index_function
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
 # 引入 APM 模組
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.apm import APM
+from openpilot.sunnypilot.selfdrive.controls.lib.apm import APM
 
 if __name__ == '__main__':  # generating code
   from openpilot.third_party.acados.acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
