@@ -74,7 +74,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.apm = APM()
     self.ocm = OCM()
     self.asc = ASCLogic() # ++ 新增：初始化 ASC ++
-    
+
     # 預先讀取開關狀態
     self.ocm.enabled = self.params.get_bool("dp_lon_ocm")
     self.apm_enabled = self.params.get_bool("dp_lon_apm")
@@ -92,7 +92,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       j = np.zeros(len(T_IDXS_MPC))
     else:
       x, v, a, j = np.zeros(len(T_IDXS_MPC)), np.zeros(len(T_IDXS_MPC)), np.zeros(len(T_IDXS_MPC)), np.zeros(len(T_IDXS_MPC))
-    
+
     throttle_prob = model_msg.meta.disengagePredictions.gasPressProbs[1] if len(model_msg.meta.disengagePredictions.gasPressProbs) > 1 else 1.0
     return x, v, a, j, throttle_prob
 
@@ -130,7 +130,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
 
-    accel_clip = [ACCEL_MIN, get_max_accel(v_ego)]
+    if sp_accel_clip := LongitudinalPlannerSP.get_accel_clip(self, v_ego):
+      accel_clip = sp_accel_clip
+    else:
+      accel_clip = [ACCEL_MIN, get_max_accel(v_ego)]
+
     current_curvature = sm['controlsState'].curvature
     accel_clip = limit_accel_in_turns(v_ego, current_curvature, accel_clip)
 
@@ -166,15 +170,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # ++ 執行：OCM 狀態判定與更新 ++
     # =========================================================
     user_control = long_control_off if self.CP.openpilotLongitudinalControl else not sm['selfdriveState'].enabled
-    
+
     # 傳入 SCC-V vision 狀態給 OCM
     self.ocm.update_states(sm['carControl'], sm['radarState'], user_control, v_ego, v_cruise, self.scc.vision.is_active)
 
+    a_cruise_min_override = LongitudinalPlannerSP.get_cruise_min_accel(self, v_ego)
     # 將覆寫後的 personality 傳入 MPC
     self.mpc.set_weights(prev_accel_constraint, personality=personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
-    self.mpc.update(sm['radarState'], v_cruise, personality=personality)
-
+    self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality, a_cruise_min_override=a_cruise_min_override)
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
 
@@ -189,12 +193,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if self.asc_enabled:
       # 將 personality 轉換為對應的跟車秒數 t_follow (0: 1.2s, 1: 1.45s, 2: 1.8s)
       t_follow = {0: 1.2, 1: 1.45, 2: 1.8}.get(personality, 1.45)
-      
+
       self.a_desired_trajectory = self.asc.process_trajectory(
-          self.a_desired_trajectory, 
-          v_ego, 
-          lead_one, 
-          current_pitch, 
+          self.a_desired_trajectory,
+          v_ego,
+          lead_one,
+          current_pitch,
           t_follow
       )
 
@@ -208,7 +212,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     action_t = self.CP.longitudinalActuatorDelay + DT_MDL
     output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
                                                                         action_t=action_t, vEgoStopping=self.CP.vEgoStopping)
-    
+
     if self.is_e2e(sm):
       output_a_target = min(sm['modelV2'].action.desiredAcceleration, output_a_target_mpc)
       self.output_should_stop = sm['modelV2'].action.shouldStop or output_should_stop_mpc
@@ -224,16 +228,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')
     plan_send.valid = sm.all_checks(service_list=['carState', 'controlsState', 'selfdriveState', 'radarState'])
-    
+
     lp = plan_send.longitudinalPlan
     lp.modelMonoTime = sm.logMonoTime['modelV2']
     lp.processingDelay = (plan_send.logMonoTime / 1e9) - sm.logMonoTime['modelV2']
     lp.solverExecutionTime = self.mpc.solve_time
-    
+
     lp.speeds, lp.accels, lp.jerks = self.v_desired_trajectory.tolist(), self.a_desired_trajectory.tolist(), self.j_desired_trajectory.tolist()
     lp.hasLead, lp.longitudinalPlanSource, lp.fcw = sm['radarState'].leadOne.status, self.mpc.source, self.fcw
     lp.aTarget, lp.shouldStop = float(self.output_a_target), bool(self.output_should_stop)
     lp.allowBrake, lp.allowThrottle = True, bool(self.allow_throttle)
-    
+
     pm.send('longitudinalPlan', plan_send)
     self.publish_longitudinal_plan_sp(sm, pm)

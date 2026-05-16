@@ -7,6 +7,7 @@ See the LICENSE.md file in the root directory for more details.
 
 from cereal import messaging, custom
 from opendbc.car import structs
+from opendbc.car.interfaces import ACCEL_MIN
 from openpilot.common.constants import CV
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
@@ -16,6 +17,8 @@ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist 
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 from openpilot.sunnypilot.models.helpers import get_active_bundle
+from openpilot.sunnypilot.selfdrive.controls.lib.accel_controller import AccelPersonalityController
+
 
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
@@ -26,6 +29,7 @@ class LongitudinalPlannerSP:
     self.events_sp = EventsSP()
     self.resolver = SpeedLimitResolver()
     self.dec = DynamicExperimentalController(CP, mpc)
+    self.accel_controller = AccelPersonalityController()
     self.scc = SmartCruiseControl()
     self.resolver = SpeedLimitResolver()
     self.sla = SpeedLimitAssist(CP, CP_SP)
@@ -42,6 +46,16 @@ class LongitudinalPlannerSP:
       return experimental_mode
 
     return experimental_mode and self.dec.mode() == "blended"
+
+  def get_accel_clip(self, v_ego: float) -> list[float] | None:
+    if self.accel_controller.is_enabled():
+      return [ACCEL_MIN, self.accel_controller.get_max_accel(v_ego)]
+    return None
+
+  def get_cruise_min_accel(self, v_ego: float) -> float | None:
+    if self.accel_controller.is_enabled():
+      return self.accel_controller.get_min_accel(v_ego)
+    return None
 
   def update_targets(self, sm: messaging.SubMaster, v_ego: float, a_ego: float, v_cruise: float) -> tuple[float, float]:
     CS = sm['carState']
@@ -77,6 +91,7 @@ class LongitudinalPlannerSP:
     self.events_sp.clear()
     self.dec.update(sm)
     self.e2e_alerts_helper.update(sm, self.events_sp)
+    self.accel_controller.update(sm)
 
   def publish_longitudinal_plan_sp(self, sm: messaging.SubMaster, pm: messaging.PubMaster) -> None:
     plan_sp_send = messaging.new_message('longitudinalPlanSP')
@@ -88,6 +103,7 @@ class LongitudinalPlannerSP:
     longitudinalPlanSP.vTarget = float(self.output_v_target)
     longitudinalPlanSP.aTarget = float(self.output_a_target)
     longitudinalPlanSP.events = self.events_sp.to_msg()
+    longitudinalPlanSP.accelPersonality = int(self.accel_controller.get_accel_personality())
 
     # Dynamic Experimental Control
     dec = longitudinalPlanSP.dec

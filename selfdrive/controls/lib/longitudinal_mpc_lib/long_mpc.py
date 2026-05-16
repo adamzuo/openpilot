@@ -319,8 +319,9 @@ class LongitudinalMpc:
     lead_xv = self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau)
     return lead_xv
 
-  def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard):
+  def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard, a_cruise_min_override=None):
     t_follow = get_T_FOLLOW(personality)
+    a_cruise_min = a_cruise_min_override if a_cruise_min_override is not None else CRUISE_MIN_ACCEL
     v_ego = self.x0[1]
     self.status = radarstate.leadOne.status or radarstate.leadTwo.status
 
@@ -335,7 +336,7 @@ class LongitudinalMpc:
 
     # Fake an obstacle for cruise, this ensures smooth acceleration to set speed
     # when the leads are no factor.
-    v_lower = v_ego + (T_IDXS * CRUISE_MIN_ACCEL * 1.05)
+    v_lower = v_ego + (T_IDXS * a_cruise_min * 1.05)
     # TODO does this make sense when max_a is negative?
     v_upper = v_ego + (T_IDXS * CRUISE_MAX_ACCEL * 1.05)
     v_cruise_clipped = np.clip(v_cruise * np.ones(N+1), v_lower, v_upper)
