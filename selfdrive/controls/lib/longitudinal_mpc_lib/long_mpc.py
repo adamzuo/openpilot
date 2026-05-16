@@ -32,12 +32,18 @@ COST_E_DIM = 5
 COST_DIM = COST_E_DIM + 1
 CONSTR_DIM = 4
 
-X_EGO_OBSTACLE_COST = 3.
+# 讓系統更早開始關心與前車的距離，避免靠太近才驚覺要煞車。
+X_EGO_OBSTACLE_COST = 4.5
 X_EGO_COST = 0.
 V_EGO_COST = 0.
-A_EGO_COST = 0.
-J_EGO_COST = 5.
-A_CHANGE_COST = 200.
+
+# 讓系統依然傾向 -1e-3 滑行，但真正踩下煞車後，不會一脫離危險就「急著放開煞車」導致震盪。
+A_EGO_COST = 0.15
+# 允許系統更早、更線性地把煞車力道「含上去」，而不是拖到最後一刻。
+J_EGO_COST = 8.0
+# 減輕系統拖延煞車的心理壓力。
+A_CHANGE_COST = 250.
+
 DANGER_ZONE_COST = 100.
 CRASH_DISTANCE = .25
 LEAD_DANGER_FACTOR = 0.75
@@ -339,6 +345,10 @@ class LongitudinalMpc:
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
 
     self.yref[:,:] = 0.0
+
+    # 這使得 MPC 在不需要主動加速時，會自然將輸出收斂至 -1e-3，
+    self.yref[:, 3] = -1e-3
+
     for i in range(N):
       self.solver.set(i, "yref", self.yref[i])
     self.solver.set(N, "yref", self.yref[N][:COST_E_DIM])
