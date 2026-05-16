@@ -44,7 +44,7 @@ class APM:
     # 濾波平滑化狀態
     self.v_rel_smoothed = None      # 用來儲存過濾/平滑化後的相對速差
 
-  def get_personality(self, v_ego, has_lead, v_lead, a_lead, d_lead, personality):
+  def get_personality(self, v_ego, has_lead, v_lead, a_lead, d_lead, personality, t_follow_relaxed=1.75):
     """
     參數說明:
     - v_ego: 自車速度 (m/s)
@@ -53,6 +53,7 @@ class APM:
     - a_lead: 前車加速度 (m/s^2)
     - d_lead: 與前車的距離 (m)
     - personality: 使用者原本設定的駕駛風格
+    - t_follow_relaxed: relaxed 模式下的跟車時間 (秒)，用來當作 TTC 的安全防禦門檻
     """
     
     # --- 1. 起步狀態更新 ---
@@ -79,15 +80,22 @@ class APM:
       # 將平滑後的數值指派給 v_rel，供後續判定使用
       v_rel = self.v_rel_smoothed
 
-      # 場景 2：前車絕對速度判斷 + 負加速判斷 + 車距判斷
-      if v_lead < V_LEAD_RELAX_ENTER and a_lead < A_LEAD_RELAX_ENTER and d_lead >= D_LEAD_RELAX_ENTER:
+      # --- 計算 TTC (Time-to-Collision) ---
+      # 如果自車比前車快 (v_rel > 0)，計算碰撞時間；如果同速或較慢，安全無虞設定為無限大
+      ttc = d_lead / v_rel if v_rel > 0.001 else float('inf')
+
+      # TTC 安全防禦條件：TTC 必須大於等於 relaxed 模式的跟車秒數 (僅用於進入條件)
+      is_ttc_safe = (ttc >= t_follow_relaxed)
+
+      # 場景 2：前車絕對速度判斷 + 負加速判斷 + 車距判斷 + TTC 安全條件 (僅限進入)
+      if v_lead < V_LEAD_RELAX_ENTER and a_lead < A_LEAD_RELAX_ENTER and d_lead >= D_LEAD_RELAX_ENTER and is_ttc_safe:
         self.is_relaxed_mode = True
       # 當速差降至 10 km/h 以內時解除
       elif v_rel <= V_REL_RELAX_EXIT:
         self.is_relaxed_mode = False
         
-      # 場景 3：與前車相對速差判斷 + 車距判斷
-      if v_rel >= V_REL_RELAX_ENTER and d_lead >= D_LEAD_RELAX_ENTER:
+      # 場景 3：與前車相對速差判斷 + 車距判斷 + TTC 安全條件 (僅限進入)
+      if v_rel >= V_REL_RELAX_ENTER and d_lead >= D_LEAD_RELAX_ENTER and is_ttc_safe:
         self.is_approaching = True
       # 當速差降至 10 km/h 以內時解除
       elif v_rel <= V_REL_RELAX_EXIT:
