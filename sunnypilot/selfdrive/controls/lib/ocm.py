@@ -9,6 +9,10 @@ OVERTAKE_THRESHOLD = 20.0 / 3.6  # 20 km/h - 進入超車滑行的門檻
 HYSTERESIS_OFFSET = 2.0 / 3.6    # 2 km/h - 保持滑行直到接近定速時才解除
 TTC_THRESHOLD = 2.25              # 秒 - 前方 2.5 秒內有車即停用
 
+# ++ 車速總開關參數 ++
+MIN_SPEED_ENABLE = 40.0 / 3.6    # 40 km/h - 車速大於此值打開總開關
+MIN_SPEED_DISABLE = 30.0 / 3.6   # 30 km/h - 車速小於此值關閉總開關
+
 # 緊急安全防線
 EMERGENCY_TTC = 2.0
 EMERGENCY_RELATIVE_SPEED = 10.0
@@ -30,6 +34,7 @@ class OCM:
     self.enabled = False
     self.active = False
     self.just_disabled = False
+    self.speed_allowed = False  # ++ 新增：記錄車速總開關目前的狀態 ++
     
     self._is_speed_over_cruise = False
     self._has_lead = False
@@ -101,7 +106,16 @@ class OCM:
             not in_cooldown and self._is_speed_over_cruise)
 
   def update_states(self, cc, rs, user_ctrl_lon, v_ego, v_cruise, sccv_active):
-    if not self.enabled:
+    # =========================================================
+    # ++ 新增：車速總開關狀態更新 (30關閉 40打開) ++
+    # =========================================================
+    if v_ego >= MIN_SPEED_ENABLE:
+      self.speed_allowed = True
+    elif v_ego <= MIN_SPEED_DISABLE:
+      self.speed_allowed = False
+
+    # 如果總系統未啟用，或是車速總開關被關閉，則不作動 OCM
+    if not self.enabled or not self.speed_allowed:
       self.active = False
       return
       
