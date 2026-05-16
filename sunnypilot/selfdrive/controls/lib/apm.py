@@ -21,10 +21,9 @@ from cereal import log
 # 速度門檻常數 (km/h 轉換為 m/s)
 APM_DEPARTURE_SPEED = 30 * 1000 / 3600   # 30 km/h：起步激烈模式上限
 
-# 場景 2 常數 (前車絕對速度、加速度與車距)
+# 場景 2 常數 (前車絕對速度、加速度)
 V_LEAD_RELAX_ENTER = 20 * 1000 / 3600    # 20 km/h：進入前車緩和模式的門檻，同時加入前車須減速狀態
 A_LEAD_RELAX_ENTER = -0.2                # -0.2 m/s^2：前車處於減速狀態的門檻
-D_LEAD_RELAX_ENTER = 10.0                # 10 m：進入前車緩和模式的最短車距門檻 (場景2與場景3共用)
 
 # 場景 3 常數 (與前車的相對速差)
 V_REL_RELAX_ENTER = 20 * 1000 / 3600     # 20 km/h：自車比前車快 20 km/h 時，進入緩和模式
@@ -53,7 +52,7 @@ class APM:
     - a_lead: 前車加速度 (m/s^2)
     - d_lead: 與前車的距離 (m)
     - personality: 使用者原本設定的駕駛風格
-    - t_follow_relaxed: relaxed 模式下的跟車時間 (秒)，用來當作 TTC 的安全防禦門檻
+    - t_follow_relaxed: relaxed 模式下的跟車時間 (秒)，用來換算動態距離門檻
     """
     
     # --- 1. 起步狀態更新 ---
@@ -80,22 +79,18 @@ class APM:
       # 將平滑後的數值指派給 v_rel，供後續判定使用
       v_rel = self.v_rel_smoothed
 
-      # --- 計算 TTC (Time-to-Collision) ---
-      # 如果自車比前車快 (v_rel > 0)，計算碰撞時間；如果同速或較慢，安全無虞設定為無限大
-      ttc = d_lead / v_rel if v_rel > 0.001 else float('inf')
+      # 計算動態距離門檻 (秒數換算距離，並設定 10m 為最低下限，避免塞車時過於敏感)
+      d_req = max(10.0, v_ego * t_follow_relaxed)
 
-      # TTC 安全防禦條件：TTC 必須大於等於 relaxed 模式的跟車秒數 (僅用於進入條件)
-      is_ttc_safe = (ttc >= t_follow_relaxed)
-
-      # 場景 2：前車絕對速度判斷 + 負加速判斷 + 車距判斷 + TTC 安全條件 (僅限進入)
-      if v_lead < V_LEAD_RELAX_ENTER and a_lead < A_LEAD_RELAX_ENTER and d_lead >= D_LEAD_RELAX_ENTER and is_ttc_safe:
+      # 場景 2：前車絕對速度判斷 + 負加速判斷 + 車距大於動態門檻
+      if v_lead < V_LEAD_RELAX_ENTER and a_lead < A_LEAD_RELAX_ENTER and d_lead >= d_req:
         self.is_relaxed_mode = True
       # 當速差降至 10 km/h 以內時解除
       elif v_rel <= V_REL_RELAX_EXIT:
         self.is_relaxed_mode = False
         
-      # 場景 3：與前車相對速差判斷 + 車距判斷 + TTC 安全條件 (僅限進入)
-      if v_rel >= V_REL_RELAX_ENTER and d_lead >= D_LEAD_RELAX_ENTER and is_ttc_safe:
+      # 場景 3：與前車相對速差判斷 + 車距大於動態門檻
+      if v_rel >= V_REL_RELAX_ENTER and d_lead >= d_req:
         self.is_approaching = True
       # 當速差降至 10 km/h 以內時解除
       elif v_rel <= V_REL_RELAX_EXIT:
