@@ -8,7 +8,7 @@ from openpilot.common.swaglog import cloudlog
 # ++ 修改：將門檻降至 2.0，解除降至 1.0，確保只要稍微高於定速就能滑行 ++
 OVERTAKE_THRESHOLD = 2.0 / 3.6   # 2 km/h - 只要比定速快 2 公里，就允許進入滑行
 HYSTERESIS_OFFSET = 1.0 / 3.6    # 1 km/h - 保持滑行直到接近定速時才解除
-TTC_THRESHOLD = 2.25             # 秒 - 前方 2.25 秒內有車即停用
+TTC_THRESHOLD = 2.0             # 秒 - 前方 2.0 秒內有車即停用
 
 # ++ 車速總開關參數 ++
 MIN_SPEED_ENABLE = 40.0 / 3.6    # 40 km/h - 車速大於此值打開總開關
