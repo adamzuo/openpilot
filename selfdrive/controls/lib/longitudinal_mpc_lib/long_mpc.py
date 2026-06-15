@@ -40,7 +40,7 @@ X_EGO_COST = 0.
 V_EGO_COST = 0.
 
 # 讓系統依然傾向 -1e-3 滑行，但真正踩下煞車後，不會一脫離危險就「急著放開煞車」導致震盪。
-A_EGO_COST = 0.15
+A_EGO_COST = 0.0
 # 允許系統更早、更線性地把煞車力道「含上去」，而不是拖到最後一刻。
 J_EGO_COST = 8.0
 # 減輕系統拖延煞車的心理壓力。
@@ -342,7 +342,7 @@ class LongitudinalMpc:
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
 
     self.yref[:,:] = 0.0
-    self.yref[:, 3] = -1e-3
+    self.yref[:, 3] = 0.0
 
     for i in range(N):
       self.solver.set(i, "yref", self.yref[i])
