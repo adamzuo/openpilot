@@ -18,8 +18,9 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 from openpilot.sunnypilot.selfdrive.controls.lib.traffic_stop.traffic_stop_controller import TrafficStopController
 
-A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
-A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
+# 修改為您提供的各車速下最大加速度與斷點
+A_CRUISE_MAX_VALS = [2.00, 1.80, 1.60, 1.50, 1.30, 1.10, 0.90, 0.80, 0.70, 0.50, 0.24, 0.10]
+A_CRUISE_MAX_BP = [0.0, 0.5, 1.0, 4.0, 6.0, 9.0, 11.0, 16.0, 20.0, 25.0, 30.0, 55.0]
 J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MIN = -1.2
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
