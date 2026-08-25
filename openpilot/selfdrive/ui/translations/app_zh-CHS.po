@@ -3427,3 +3427,18 @@ msgstr "🔥 Firehose 模式 🔥"
 msgid "🚀 sunnylink 🚀"
 msgstr "🚀 SunnyLink 🚀"
 
+#: selfdrive\ui\sunnypilot\layouts\settings\cruise.py
+msgid "Stop at Red Lights / Stop Signs"
+msgstr "红绿灯／停止标志停等"
+
+#: selfdrive\ui\sunnypilot\layouts\settings\cruise.py
+msgid "Stop for red lights and stop signs using the driving model's own predicted trajectory to place a virtual stop-line obstacle for the planner. No separate traffic light detector is required."
+msgstr "利用驾驶模型自身预测的行驶轨迹，在停止线位置放置虚拟障碍物，让规划器据此煞车，藉此在红绿灯与停止标志前停等。不需要额外的红绿灯侦测器。"
+
+#: selfdrive\ui\sunnypilot\layouts\settings\cruise.py
+msgid "Stop Line Position Adjust"
+msgstr "停止线位置微调"
+
+#: selfdrive\ui\sunnypilot\layouts\settings\cruise.py
+msgid "Fine-tune where the virtual stop-line obstacle is placed. Positive values move it further away (stop later, closer to the line); negative values pull it closer to the car (stop earlier, further back from the line)."
+msgstr "微调虚拟停止线障碍物的放置位置。正值会将其移动至较远处（较晚煞车、较接近停止线）；负值则会将其拉近至本车（较早煞车、停在较后方）。"
