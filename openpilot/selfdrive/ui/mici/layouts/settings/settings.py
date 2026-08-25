@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton
@@ -19,6 +20,7 @@ class SettingsLayout(NavScroller):
   def __init__(self):
     super().__init__()
     self._params = Params()
+    self._preview_callback: Callable | None = None
 
     toggles_panel = TogglesLayoutMici()
     toggles_btn = SettingsBigButton("toggles", "", gui_app.texture("icons_mici/settings.png", 64, 64))
@@ -31,6 +33,7 @@ class SettingsLayout(NavScroller):
     device_panel = DeviceLayoutMici()
     device_btn = SettingsBigButton("device", "", gui_app.texture("icons_mici/settings/device_icon.png", 72, 58))
     device_btn.set_click_callback(lambda: gui_app.push_widget(device_panel))
+    device_panel.set_preview_callback(self._enter_onroad_preview)
 
     software_panel = SoftwareLayoutMici()
     software_btn = SettingsBigButton("software", "", gui_app.texture("icons_mici/settings/software.png", 64, 75))
@@ -55,3 +58,11 @@ class SettingsLayout(NavScroller):
     ])
 
     self._font_medium = gui_app.font(FontWeight.MEDIUM)
+
+  def set_preview_callback(self, callback: Callable | None) -> None:
+    self._preview_callback = callback
+
+  def _enter_onroad_preview(self) -> None:
+    self._params.put_bool("IsOnroadPreview", True)
+    if self._preview_callback is not None:
+      self._preview_callback()
