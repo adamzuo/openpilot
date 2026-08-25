@@ -1,23 +1,9 @@
 #!/usr/bin/env python3
 """
-Lane Centering Corrector (LCC) v2.6 - 台灣道路在地化終極特調版 
-(混合信心度 + Soft Decay + 動態遲滯 + 漸進式曲率權重 + 控制路徑濾波)
-
-將 10~50m 範圍內的左右車道線計算出多個中心點，並利用 np.polyfit 擬合出 
-y = ax^2 + bx + c 的二次曲線。
-v2.5 Pro 優化重點：
-- 捨棄急彎硬切斷 (Hard Cutoff)，改為「漸進式曲率權重 (Progressive Curvature Weight)」。
-- 彎道越急，LCC 修正權重越低，實現與 E2E 模型的無縫融合，徹底消滅門檻抖動，出彎秒接管！
-
-v2.6 修正重點 (解決方向盤左右晃動)：
-- 【核心 Bug】原本 lane_target_curvature / center_y_l 是用「每幀原始」的 polyfit
-  係數 a,b,c 計算，UI_SMOOTH_TAU 平滑只套用在 self.poly_a/b/c 這組僅供繪圖用的
-  屬性上，完全沒有真正進入控制路徑，導致車道線偵測雜訊直接放大成方向盤修正量。
-  現在新增獨立的「控制路徑」平滑係數 self._ctrl_a/b/c，曲率與中心點計算改用這組。
-- weight (車道線信心度) 與 curvature_weight (漸進式曲率權重) 原本逐幀重算、
-  沒有時間濾波，機率/曲率在門檻附近抖動會直接反映到修正量大小，現在都各自加上
-  低通濾波，行為更平滑，UI 繪圖用的平滑邏輯 (self.poly_a/b/c, UI_SMOOTH_TAU)
-  維持不變。
+Lane Centering Corrector (LCC) v3.0 (DP x Starpilot 終極混血版)
+- 外殼與控制邏輯：DP v2.12 (漸進式曲率權重、讓車避險、信心度濾波、晃動偵測)
+- 核心演算法：Starpilot 純跟隨 (Pure Pursuit) 幾何算法 (捨棄 polyfit 二次微分)
+- 適用車型：高度推薦豐田車系 (Toyota CC 等)，有效消滅直線碎震，保護 EPS 馬達。
 """
 
 import os
@@ -30,16 +16,17 @@ from openpilot.common.filter_simple import FirstOrderFilter
 PARAM_REFRESH_SEC = 2.0
 
 # --- Debug log 設定 ---
-ENABLE_CSV_LOG = False
+ENABLE_CSV_LOG = True
 LOG_PATH = "/data/media/0/realdata/lcc_debug.csv"
 LOG_INTERVAL_SEC = 0.1  
 LOG_COLUMNS = [
   "t", "dt", "v_kph", "state",
   "lat_active", "speed_gate", "model_curvature",
   "yield_hold_timer", "engage_ramp_timer", "ramp_factor", "curvature_weight",
-  "weight", "poly_a", "poly_b", "poly_c", "lane_target_curv",
-  "path_std", "pos_error", "yield_persist_timer", "yield_factor", "yield_suppression_pct",
-  "raw_correction", "rate_limited_correction", "correction",
+  "weight", "lookahead_m", "lane_width", "pos_error", "path_std",
+  "yield_persist_timer", "yield_factor", "yield_suppression_pct",
+  "curvature_error", "raw_correction", "rate_limited_correction", "correction",
+  "delta_correction", "wobble_rate"
 ]
 
 # --- 系統內建參數 ---
@@ -47,46 +34,52 @@ SPEED_ON_KPH = 20.0
 SPEED_OFF_KPH = 10.0
 KPH_TO_MS = 1000.0 / 3600.0
 
-FIT_X = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-
-# 恢復市區靈敏度，縮短前視距離與預測時間
 MIN_LOOKAHEAD_M = 12.0
 LOOKAHEAD_TIME_SEC = 0.9
-
-# 兼顧快速啟動與過濾直線碎震，消除神經質晃動
 FILTER_RC_SEC = 0.45
 
-# --- 漸進式曲率權重 (取代舊版急彎硬切斷) ---
-CURVATURE_WEIGHT_FULL = 0.020  # 曲率低於此值 (一般彎道/直線)：100% 修正
-CURVATURE_WEIGHT_ZERO = 0.060  # 曲率高於此值 (大急彎)：0% 修正 (完全交給 E2E 模型)
+CURVATURE_WEIGHT_FULL = 0.020  
+CURVATURE_WEIGHT_ZERO = 0.060  
 
 PROB_MIN = 0.4
 PROB_FULL = 0.6
 
 LANE_WEIGHT_MAX = 0.90 
-# 保護 EPS 馬達，堅守最大修正極限
 MAX_CORRECTION = 0.012  
 MAX_CORRECTION_RATE = 0.011
 
+# ==========================================
+# --- 🌟 Starpilot 核心可選參數 (在此設定) ---
+# ==========================================
+# 車道偏移微調 (單位：公尺)。正值偏右，負值偏左。例如 -0.05 代表整車靠左 5 公分。
+SP_LANE_OFFSET = 0.0  
+
+# 車道誤差死區 (單位：公尺)。預設 0.08 (8公分)。這範圍內的微小跳動不會引發方向盤修正，是消滅晃動的關鍵。
+SP_CENTER_DEADBAND = 0.08  
+
+# 允許介入的最小與最大車道寬度 (單位：公尺)
+SP_LANE_WIDTH_MIN = 2.6
+SP_LANE_WIDTH_MAX = 4.8
+
+# 最大允許使用者設定的安全偏移量限制，避免不小心設太大
+SP_MAX_OFFSET = 0.3
+SP_MIN_CENTER_TO_LINE = 1.1
+# ==========================================
+
 YIELD_CONFIRM_SEC = 0.15
 ENGAGE_RAMP_SEC = 0.8  
-
 SOFT_DISABLE_HOLD_SEC = 0.4
 
+# --- 避讓 (Yield) 邏輯參數 ---
 YIELD_MAX_PATH_STD = 0.35
 YIELD_BREAK_IN_START = 0.35
 YIELD_BREAK_IN_FULL = 0.85
 DEFAULT_E2E_AUTHORITY = 1.0
 
-# --- UI 視覺優化參數 ---
-UI_SMOOTH_TAU = 0.2
-UI_MIN_DRAW_WEIGHT = 0.4
-
-# --- v2.6 控制路徑濾波參數 (實際餵進修正量計算，防止晃動) ---
-CTRL_SMOOTH_TAU = 0.15          # 曲線係數 a,b,c 的控制路徑平滑
-WEIGHT_SMOOTH_TAU = 0.15        # 車道線信心度 weight 的平滑
-CURVATURE_WEIGHT_SMOOTH_TAU = 0.15  # 漸進式曲率權重的平滑
-WEIGHT_ACTIVE_EPS = 1e-4        # 平滑後判斷 weight 是否視為 0 的容差
+# --- 控制路徑濾波參數 ---
+WEIGHT_SMOOTH_TAU = 0.15        
+CURVATURE_WEIGHT_SMOOTH_TAU = 0.15  
+WEIGHT_ACTIVE_EPS = 1e-4        
 
 
 def _clip_interp(x, xp, fp):
@@ -107,16 +100,8 @@ class LaneCenteringCorrector:
 
     self._filter = FirstOrderFilter(0.0, FILTER_RC_SEC, 0.01)
     self.correction = 0.0
+    self._last_correction = 0.0  
     
-    self.poly_a = 0.0
-    self.poly_b = 0.0
-    self.poly_c = 0.0
-
-    # v2.6: 控制路徑專用的平滑係數 (與 self.poly_a/b/c 的 UI 平滑分開)
-    self._ctrl_a = 0.0
-    self._ctrl_b = 0.0
-    self._ctrl_c = 0.0
-
     self.weight = 0.0
     self._active = False
     self._speed_gate = False  
@@ -140,12 +125,7 @@ class LaneCenteringCorrector:
   def reset(self) -> None:
     self._filter.x = 0.0
     self.correction = 0.0
-    self.poly_a = 0.0
-    self.poly_b = 0.0
-    self.poly_c = 0.0
-    self._ctrl_a = 0.0
-    self._ctrl_b = 0.0
-    self._ctrl_c = 0.0
+    self._last_correction = 0.0
     self.weight = 0.0
     self._active = False
     self._speed_gate = False
@@ -165,7 +145,6 @@ class LaneCenteringCorrector:
 
   @staticmethod
   def _calc_curvature_weight(model_curvature: float) -> float:
-    """計算漸進式曲率權重：彎道越急，LCC 介入比例越低"""
     c = abs(float(model_curvature))
     if c <= CURVATURE_WEIGHT_FULL:
       return 1.0
@@ -180,7 +159,7 @@ class LaneCenteringCorrector:
     limited = self._rate_limit(0.0, dt)
     return self._filter.update(limited)
 
-  def _lookup_path_std_and_error(self, model_v2, center_y_l: float, l: float) -> tuple[float, float]:
+  def _lookup_path_std_and_error(self, model_v2, target_y_l: float, l: float) -> tuple[float, float]:
     try:
       pos_x = np.asarray(model_v2.position.x, dtype=float)
       pos_y = np.asarray(model_v2.position.y, dtype=float)
@@ -197,13 +176,13 @@ class LaneCenteringCorrector:
 
       model_y = float(np.interp(l, pos_x, pos_y))
       path_std = float(np.interp(l, pos_x, pos_y_std))
-      pos_error = center_y_l - model_y
+      pos_error = target_y_l - model_y
       return path_std, pos_error
     except (AttributeError, TypeError, ValueError, IndexError):
       return -1.0, 0.0
 
-  def _yield_factor(self, model_v2, center_y_l: float, l: float, e2e_authority: float, dt: float, v_ego: float) -> tuple[float, float, float, float]:
-    path_std, pos_error = self._lookup_path_std_and_error(model_v2, center_y_l, l)
+  def _yield_factor(self, model_v2, target_y_l: float, l: float, e2e_authority: float, dt: float, v_ego: float) -> tuple[float, float, float, float]:
+    path_std, pos_error = self._lookup_path_std_and_error(model_v2, target_y_l, l)
     error_abs = abs(pos_error)
     std_valid = 0.0 <= path_std <= YIELD_MAX_PATH_STD
 
@@ -233,8 +212,10 @@ class LaneCenteringCorrector:
     
     now = time.monotonic()
     state_changed = state != self._last_logged_state
+    
     if not state_changed and (now - self._last_log_time) < LOG_INTERVAL_SEC:
       return
+      
     self._last_log_time = now
     self._last_logged_state = state
     try:
@@ -257,14 +238,19 @@ class LaneCenteringCorrector:
   def _log_fallback(self, state: str, dt, v_ego_kph, lat_active, model_curvature, ramp_factor):
     if not ENABLE_CSV_LOG:
       return
+    
+    delta_correction = self.correction - self._last_correction
+    wobble_rate = abs(delta_correction) / max(dt, 1e-5)
+    self._last_correction = self.correction
+
     self._log_row(state, dt=dt, v_kph=v_ego_kph, lat_active=lat_active,
                   speed_gate=self._speed_gate, model_curvature=model_curvature, 
                   yield_hold_timer=self._yield_hold_timer, engage_ramp_timer=self._engage_ramp_timer, 
                   ramp_factor=ramp_factor, curvature_weight=self.curvature_weight,
-                  weight=0.0, poly_a=0.0, poly_b=0.0, poly_c=0.0, 
-                  lane_target_curv=0.0, path_std=-1.0, pos_error=0.0,
+                  weight=0.0, lookahead_m=0.0, lane_width=0.0, pos_error=0.0, path_std=-1.0, 
                   yield_persist_timer=self._yield_persist_timer, yield_factor=1.0, yield_suppression_pct=0.0,
-                  raw_correction=0.0, rate_limited_correction=0.0, correction=self.correction)
+                  curvature_error=0.0, raw_correction=0.0, rate_limited_correction=0.0, correction=self.correction,
+                  delta_correction=delta_correction, wobble_rate=wobble_rate)
 
   def update(self, model_v2, v_ego: float, lat_active: bool, dt: float,
              left_blinker: bool = False, right_blinker: bool = False,
@@ -280,10 +266,8 @@ class LaneCenteringCorrector:
 
     model_curvature = getattr(model_v2.action, "desiredCurvature", 0.0) if lat_active else 0.0
     raw_curvature_weight = self._calc_curvature_weight(model_curvature)
-    # v2.6: 對曲率權重做低通濾波，避免在 FULL/ZERO 門檻附近抖動時修正量忽大忽小
     self.curvature_weight = self._smooth(raw_curvature_weight, self.curvature_weight, CURVATURE_WEIGHT_SMOOTH_TAU, dt)
 
-    # --- 硬性停用 ---
     hard_invalid = (not self._enabled or not lat_active)
     if hard_invalid:
       _state = "DISABLED" if not self._enabled else "NOT_LAT_ACTIVE"
@@ -291,7 +275,6 @@ class LaneCenteringCorrector:
       self._log_fallback(_state, dt, v_ego_kph, lat_active, model_curvature, 0.0)
       return 0.0
 
-    # --- 暫時性放手 (Soft Invalid)：現在只受車速控制 ---
     soft_invalid = not self._speed_gate
     if soft_invalid:
       self._inactive_timer += dt
@@ -300,7 +283,6 @@ class LaneCenteringCorrector:
       
       self._active = False
       self.weight = 0.0
-      self.poly_a = self.poly_b = self.poly_c = 0.0
       self.correction = self._decay(dt)
       self._log_fallback("SPEED_GATE_OFF", dt, v_ego_kph, lat_active, model_curvature,
                          float(np.clip(self._engage_ramp_timer / ENGAGE_RAMP_SEC, 0.0, 1.0)))
@@ -310,7 +292,6 @@ class LaneCenteringCorrector:
     self._engage_ramp_timer += dt
     ramp_factor = float(np.clip(self._engage_ramp_timer / ENGAGE_RAMP_SEC, 0.0, 1.0))
 
-    # 必須有方向燈且轉動方向盤才退讓
     raw_yield_condition = (left_blinker or right_blinker) and steering_pressed
     if raw_yield_condition:
       self._yield_hold_timer += dt
@@ -321,7 +302,6 @@ class LaneCenteringCorrector:
     if is_yielding:
       self._active = False
       self.weight = 0.0
-      self.poly_a = self.poly_b = self.poly_c = 0.0
       self.correction = self._decay(dt)
       self._log_fallback("YIELDING", dt, v_ego_kph, lat_active, model_curvature, ramp_factor)
       return self.correction
@@ -329,19 +309,16 @@ class LaneCenteringCorrector:
     lane_lines = model_v2.laneLines
     lane_line_probs = model_v2.laneLineProbs
 
-    # --- NO_LANE_DATA 改為 Soft Decay 平滑退場 ---
     if len(lane_lines) < 3 or len(lane_line_probs) < 3:
       self._active = False
       self.weight = 0.0
-      self.poly_a = self.poly_b = self.poly_c = 0.0
       self.correction = self._decay(dt)
       self._log_fallback("NO_LANE_DATA", dt, v_ego_kph, lat_active, model_curvature, ramp_factor)
       return self.correction
 
-    # --- 混合信心度算法 (平均值 + 單邊可靠性限制) ---
+    # --- 信心度計算 (DP 原版邏輯) ---
     lll_prob = float(np.clip(lane_line_probs[1], 0.0, 1.0))
     rll_prob = float(np.clip(lane_line_probs[2], 0.0, 1.0))
-    
     mean_prob = 0.5 * (lll_prob + rll_prob)
     min_prob = min(lll_prob, rll_prob)
     
@@ -350,97 +327,82 @@ class LaneCenteringCorrector:
     
     confidence = confidence_mean * (0.65 + 0.35 * single_side_factor)
     raw_weight = confidence * LANE_WEIGHT_MAX
-    # v2.6: 對信心度做低通濾波，避免車道線機率在門檻附近抖動時修正量忽大忽小
     self.weight = self._smooth(raw_weight, self.weight, WEIGHT_SMOOTH_TAU, dt)
 
     if self.weight <= WEIGHT_ACTIVE_EPS:
       self._active = False
-      self.poly_a = self.poly_b = self.poly_c = 0.0
       self.correction = self._decay(dt)
       self._log_fallback("LOW_CONFIDENCE", dt, v_ego_kph, lat_active, model_curvature, ramp_factor)
       return self.correction
 
+    # ==============================================================
+    # 🌟 核心替換：改用 Starpilot 純跟隨 (Pure Pursuit) 空間位置演算法 🌟
+    # ==============================================================
     lll = lane_lines[1]
     rll = lane_lines[2]
     
-    valid_x = []
-    center_y = []
-    for x in FIT_X:
-      l_y = _clip_interp(x, lll.x, lll.y)
-      r_y = _clip_interp(x, rll.x, rll.y)
-      if l_y is not None and r_y is not None:
-        valid_x.append(x)
-        center_y.append((l_y + r_y) / 2.0)
+    # 動態前視距離 (結合 Starpilot 與 DP 的優點，依照車速預測)
+    lookahead = float(np.clip(v_ego * LOOKAHEAD_TIME_SEC, MIN_LOOKAHEAD_M, 40.0))
 
-    if len(valid_x) < 3:
+    l_x = np.asarray(lll.x, dtype=float)
+    l_y = np.asarray(lll.y, dtype=float)
+    r_x = np.asarray(rll.x, dtype=float)
+    r_y = np.asarray(rll.y, dtype=float)
+    pos_x = np.asarray(model_v2.position.x, dtype=float)
+    pos_y = np.asarray(model_v2.position.y, dtype=float)
+
+    # 取得前視距離當下的左、右車道線 Y 座標，與模型預測車輛的 Y 座標
+    left_y_l = _clip_interp(lookahead, l_x, l_y)
+    right_y_l = _clip_interp(lookahead, r_x, r_y)
+    model_y_l = _clip_interp(lookahead, pos_x, pos_y)
+
+    if left_y_l is None or right_y_l is None or model_y_l is None:
       self._active = False
-      self.poly_a = self.poly_b = self.poly_c = 0.0
+      self.weight = 0.0
       self.correction = self._decay(dt)
       self._log_fallback("INTERP_FAIL", dt, v_ego_kph, lat_active, model_curvature, ramp_factor)
       return self.correction
 
-    try:
-      coeffs = np.polyfit(valid_x, center_y, 2)
-      if len(coeffs) != 3 or not np.isfinite(coeffs).all():
-        raise ValueError("invalid lane polynomial")
-      a, b, c = (float(coeffs[0]), float(coeffs[1]), float(coeffs[2]))
-    except (TypeError, ValueError, np.linalg.LinAlgError):
+    # 車道寬度驗證
+    lane_width = right_y_l - left_y_l
+    if not (SP_LANE_WIDTH_MIN <= lane_width <= SP_LANE_WIDTH_MAX):
       self._active = False
       self.weight = 0.0
-      self.poly_a = self.poly_b = self.poly_c = 0.0
       self.correction = self._decay(dt)
-      self._log_fallback("POLYFIT_FAIL", dt, v_ego_kph, lat_active, model_curvature, ramp_factor)
+      self._log_fallback("LANE_WIDTH_INVALID", dt, v_ego_kph, lat_active, model_curvature, ramp_factor)
       return self.correction
+
+    # 安全偏移量計算
+    max_safe_offset = min(SP_MAX_OFFSET, max(0.0, lane_width * 0.5 - SP_MIN_CENTER_TO_LINE))
+    applied_offset = float(np.clip(SP_LANE_OFFSET, -max_safe_offset, max_safe_offset))
+
+    # 計算目標中心點與實際位置誤差
+    target_y_l = 0.5 * (left_y_l + right_y_l) + applied_offset
+    pos_error_raw = target_y_l - model_y_l
+
+    # Starpilot 靈魂：位置誤差死區 (Deadband)，過濾直線碎震
+    pos_error_abs = abs(pos_error_raw)
+    if pos_error_abs <= SP_CENTER_DEADBAND:
+      pos_error = 0.0
+    else:
+      pos_error = np.copysign(pos_error_abs - SP_CENTER_DEADBAND, pos_error_raw)
+
+    # 純跟隨幾何公式轉換：將橫向位置誤差轉換為目標曲率誤差
+    curvature_error = float(2.0 * pos_error / (lookahead ** 2))
     
-    # --- UI 平滑過濾 (僅供畫面顯示用，不影響實際修正量計算) ---
-    if self.weight >= UI_MIN_DRAW_WEIGHT:
-      if abs(self.poly_c) < 1e-7:  
-        self.poly_a = float(a)
-        self.poly_b = float(b)
-        self.poly_c = float(c)
-      else:
-        self.poly_a = self._smooth(float(a), self.poly_a, UI_SMOOTH_TAU, dt)
-        self.poly_b = self._smooth(float(b), self.poly_b, UI_SMOOTH_TAU, dt)
-        self.poly_c = self._smooth(float(c), self.poly_c, UI_SMOOTH_TAU, dt)
-    else:
-      self.poly_a = 0.0
-      self.poly_b = 0.0
-      self.poly_c = 0.0
-
-    # --- v2.6 控制路徑平滑：這組才是真正拿去算修正量的係數 ---
-    # 每次有效擬合都會更新，不受 UI_MIN_DRAW_WEIGHT 門檻影響，避免車道線雜訊
-    # 直接放大成方向盤修正量。冷啟動 (係數全為 0) 時直接採用當幀值，之後才平滑。
-    if self._ctrl_a == 0.0 and self._ctrl_b == 0.0 and abs(self._ctrl_c) < 1e-7:
-      self._ctrl_a, self._ctrl_b, self._ctrl_c = float(a), float(b), float(c)
-    else:
-      self._ctrl_a = self._smooth(float(a), self._ctrl_a, CTRL_SMOOTH_TAU, dt)
-      self._ctrl_b = self._smooth(float(b), self._ctrl_b, CTRL_SMOOTH_TAU, dt)
-      self._ctrl_c = self._smooth(float(c), self._ctrl_c, CTRL_SMOOTH_TAU, dt)
-
-    L = max(MIN_LOOKAHEAD_M, v_ego * LOOKAHEAD_TIME_SEC)
-    lane_target_curvature = (2.0 * self._ctrl_a) + (2.0 * self._ctrl_b / L) + (2.0 * self._ctrl_c / (L ** 2))
-    center_y_l = self._ctrl_a * (L ** 2) + self._ctrl_b * L + self._ctrl_c
-
-    if not (np.isfinite(L) and np.isfinite(lane_target_curvature) and np.isfinite(center_y_l)):
-      self._active = False
-      self.weight = 0.0
-      self.poly_a = self.poly_b = self.poly_c = 0.0
-      self.correction = self._decay(dt)
-      self._log_fallback("CURVATURE_FAIL", dt, v_ego_kph, lat_active, model_curvature, ramp_factor)
-      return self.correction
-
-    yield_factor, path_std, pos_error, yield_persist_timer = self._yield_factor(model_v2, center_y_l, L, e2e_authority, dt, v_ego)
-
-    curvature_error = lane_target_curvature - model_curvature
     if not np.isfinite(curvature_error):
       self._active = False
       self.weight = 0.0
-      self.poly_a = self.poly_b = self.poly_c = 0.0
       self.correction = self._decay(dt)
-      self._log_fallback("CURVATURE_ERROR_FAIL", dt, v_ego_kph, lat_active, model_curvature, ramp_factor)
+      self._log_fallback("MATH_ERROR_FAIL", dt, v_ego_kph, lat_active, model_curvature, ramp_factor)
       return self.correction
 
-    # --- v2.5 最終連乘公式：加入 curvature_weight 漸進控制 ---
+    # ==============================================================
+
+    # 保留 DP 強大的退讓 (Yield) 避險機制
+    yield_factor, path_std, log_pos_error, yield_persist_timer = self._yield_factor(model_v2, target_y_l, lookahead, e2e_authority, dt, v_ego)
+
+    # 最終連乘公式：權重 * 緩起動 * 避險讓車係數 * 彎道漸進權重 * 誤差
     raw_correction = self.weight * ramp_factor * yield_factor * self.curvature_weight * curvature_error
     raw_correction = float(np.clip(raw_correction, -MAX_CORRECTION, MAX_CORRECTION))
 
@@ -448,18 +410,23 @@ class LaneCenteringCorrector:
     self.correction = self._filter.update(rate_limited_correction)
     self._active = True
 
+    delta_correction = self.correction - self._last_correction
+    wobble_rate = abs(delta_correction) / max(dt, 1e-5)
+    self._last_correction = self.correction
+
     if ENABLE_CSV_LOG:
       self._log_row("ACTIVE", dt=dt, v_kph=v_ego_kph, lat_active=lat_active,
                     speed_gate=self._speed_gate, model_curvature=model_curvature,
                     yield_hold_timer=self._yield_hold_timer,
                     engage_ramp_timer=self._engage_ramp_timer, ramp_factor=ramp_factor,
                     curvature_weight=self.curvature_weight,
-                    weight=self.weight, poly_a=a, poly_b=b, poly_c=c,
-                    lane_target_curv=lane_target_curvature,
-                    path_std=path_std, pos_error=pos_error,
+                    weight=self.weight, lookahead_m=lookahead, lane_width=lane_width, pos_error=pos_error_raw,
+                    path_std=path_std,
                     yield_persist_timer=yield_persist_timer, yield_factor=yield_factor,
                     yield_suppression_pct=(1.0 - yield_factor) * 100.0,
+                    curvature_error=curvature_error,  
                     raw_correction=raw_correction, rate_limited_correction=rate_limited_correction,
-                    correction=self.correction)
+                    correction=self.correction,
+                    delta_correction=delta_correction, wobble_rate=wobble_rate)
     
     return self.correction
