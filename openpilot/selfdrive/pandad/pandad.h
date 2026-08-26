@@ -26,6 +26,7 @@ private:
   void updateMultiplexingMode();
   std::vector<std::string> fetchCarParams();
   void setSafetyMode(const std::vector<std::string> &params_string);
+  bool verifySafetyMode();
 
   bool initialized_ = false;
   bool log_once_ = false;
@@ -33,4 +34,10 @@ private:
   bool prev_obd_multiplexing_ = false;
   std::vector<Panda *> pandas_;
   Params params_;
+
+  // set_alternative_experience()/set_safety_model() are one-shot USB control writes with no
+  // built-in ack -- verifySafetyMode() confirms panda actually applied what was sent (see
+  // panda_safety.cc for why this matters), and these track that verification across retries.
+  uint16_t expected_alternative_experience_ = 0;
+  int safety_verify_attempts_ = 0;
 };
