@@ -110,38 +110,46 @@ def main() -> None:
     cloudlog.exception("pandad.uncaught_exception")
 
   count = 0
+  no_internal_panda_count = 0
   while not do_exit:
     try:
       cloudlog.event("pandad.flash_and_connect", count=count)
-      HARDWARE.reset_internal_panda()
       count += 1
-      # The internal SPI panda takes ~10s to boot its app after a reset.
-      # Wait for it to come back in normal (non-bootstub) mode before
-      # deciding whether to flash. Only fall back to the bootloader
-      # (recover) path if it never appears.
-      panda_serials: list[str] = []
-      for _ in range(40):
+
+      # Handle missing internal panda
+      if no_internal_panda_count > 0:
+        cloudlog.info("No pandas found, resetting internal panda")
+        HARDWARE.reset_internal_panda()
+        # The internal panda takes a few seconds to boot its app after a reset.
+        # Wait for it to come back in normal (non-bootstub) mode before
+        # deciding whether to flash. Only fall back to the bootloader
+        # (recover) path if it never appears.
+        panda_serials: list[str] = []
+        for _ in range(16):
+          panda_serials = Panda.list()
+          if len(panda_serials) == 1:
+            try:
+              with Panda(panda_serials[0]) as p:
+                if not p.bootstub:
+                  break
+            except Exception:
+              pass
+          time.sleep(0.5)
+        if not panda_serials:
+          cloudlog.info("Panda did not appear after reset, trying recover...")
+          HARDWARE.recover_internal_panda()
+          time.sleep(5)
+      else:
         panda_serials = Panda.list()
-        if panda_serials:
-          try:
-            with Panda(panda_serials[0]) as p:
-              if not p.bootstub:
-                break
-          except Exception:
-            pass
-        time.sleep(0.5)
+
+      # Only touch DFU when the panda truly never came up in normal mode
       if not panda_serials:
-        cloudlog.info("Panda did not appear after reset, trying recover...")
-        HARDWARE.recover_internal_panda()
-        time.sleep(5)
+        for serial in PandaDFU.list():
+          cloudlog.info(f"Panda in DFU mode found, flashing recovery {serial}")
+          PandaDFU(serial).recover()
+          time.sleep(1)
+        panda_serials = Panda.list()
 
-      # Flash all Pandas in DFU mode
-      for serial in PandaDFU.list():
-        cloudlog.info(f"Panda in DFU mode found, flashing recovery {serial}")
-        PandaDFU(serial).recover()
-        time.sleep(1)
-
-      panda_serials = Panda.list()
       if len(panda_serials):
         # custom flasher for xnor's Rivian Longitudinal Upgrade Kit
         flash_rivian_long(panda_serials)
@@ -162,10 +170,16 @@ def main() -> None:
           os.environ['MANAGER_DAEMON'] = 'pandad'
           process = subprocess.Popen(["./pandad", panda_serials[0]], cwd=os.path.join(BASEDIR, "openpilot/selfdrive/pandad"))
           process.wait()
+          no_internal_panda_count = 0
         elif len(panda_serials) > 1:
           cloudlog.warning(f"multiple supported pandas found, cannot run single-panda pandad: {panda_serials}")
+          no_internal_panda_count += 1
         else:
           cloudlog.warning("no supported panda found, retrying...")
+          no_internal_panda_count += 1
+      else:
+        cloudlog.warning("no panda found, retrying...")
+        no_internal_panda_count += 1
     # TODO: wrap all panda exceptions in a base panda exception
     except (usb1.USBErrorNoDevice, usb1.USBErrorPipe):
       # a panda was disconnected while setting everything up. let's try again
