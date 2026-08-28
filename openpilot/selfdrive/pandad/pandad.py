@@ -156,9 +156,11 @@ def main() -> None:
           # interface before handing off to the C++ pandad
           time.sleep(2)
 
-          # run real pandad
+          # run real pandad. Pass the serial explicitly: the C3XL panda is
+          # USB-only (no SPI), and relying on Panda::list() from a fresh C++
+          # process right after a python session was unreliable.
           os.environ['MANAGER_DAEMON'] = 'pandad'
-          process = subprocess.Popen(["./pandad"], cwd=os.path.join(BASEDIR, "openpilot/selfdrive/pandad"))
+          process = subprocess.Popen(["./pandad", panda_serials[0]], cwd=os.path.join(BASEDIR, "openpilot/selfdrive/pandad"))
           process.wait()
         elif len(panda_serials) > 1:
           cloudlog.warning(f"multiple supported pandas found, cannot run single-panda pandad: {panda_serials}")
