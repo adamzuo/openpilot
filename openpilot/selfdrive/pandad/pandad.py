@@ -152,6 +152,10 @@ def main() -> None:
           cloudlog.info(f"{len(panda_serials)} panda found, connecting - {panda_serials}")
           flash_panda(panda_serials[0])
 
+          # give the python libusb handles a moment to fully release the USB
+          # interface before handing off to the C++ pandad
+          time.sleep(2)
+
           # run real pandad
           os.environ['MANAGER_DAEMON'] = 'pandad'
           process = subprocess.Popen(["./pandad"], cwd=os.path.join(BASEDIR, "openpilot/selfdrive/pandad"))
