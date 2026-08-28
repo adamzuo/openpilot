@@ -15,8 +15,8 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.pandad.rivian_long_flasher import flash_rivian_long
 
 
-def get_expected_signature() -> bytes:
-  fn = os.path.join(FW_PATH, McuType.H7.config.app_fn)
+def get_expected_signature(panda) -> bytes:
+  fn = os.path.join(FW_PATH, panda.mcu_type.config.app_fn)
   return Panda.get_signature_from_firmware(fn)
 
 def flash_panda(panda_serial: str):
@@ -28,7 +28,7 @@ def flash_panda(panda_serial: str):
     panda.close()
     return
 
-  fw_signature = get_expected_signature()
+  fw_signature = get_expected_signature(panda)
   internal_panda = panda.is_internal()
 
   panda_version = "bootstub" if panda.bootstub else panda.get_version()
@@ -37,7 +37,12 @@ def flash_panda(panda_serial: str):
 
   if panda.bootstub or panda_signature != fw_signature:
     cloudlog.info("Panda firmware out of date, update required")
-    panda.flash()
+    try:
+      panda.flash()
+    except Exception:
+      cloudlog.exception("flasher-based flash failed, falling back to DFU recover")
+      panda = Panda(panda_serial)
+      panda.recover(reset=(not internal_panda))
     cloudlog.info("Done flashing")
 
   if panda.bootstub:
@@ -66,12 +71,16 @@ def check_panda_support(panda_serials: list[str]) -> list[str]:
     if serial in spi_serials:
       return [serial]
 
+  # no internal panda found: allow a supported external panda (e.g. USB black panda / dos)
   for serial in panda_serials:
-    panda = Panda(serial)
-    is_internal = panda.is_internal()
-    panda.close()
-    if is_internal:
-      return [serial]
+    try:
+      panda = Panda(serial)
+      is_supported = panda.get_type() in Panda.SUPPORTED_DEVICES
+      panda.close()
+      if is_supported:
+        return [serial]
+    except Exception:
+      continue
 
   return []
 
@@ -136,17 +145,21 @@ def main() -> None:
       if len(panda_serials):
         # custom flasher for xnor's Rivian Longitudinal Upgrade Kit
         flash_rivian_long(panda_serials)
-        # find the internal supported panda (e.g. skip external Black Panda)
+        # prefer an internal panda; otherwise fall back to a supported external panda (e.g. USB black panda / dos)
         panda_serials = check_panda_support(panda_serials)
 
-        assert len(panda_serials) == 1
-        cloudlog.info(f"{len(panda_serials)} panda found, connecting - {panda_serials}")
-        flash_panda(panda_serials[0])
+        if len(panda_serials) == 1:
+          cloudlog.info(f"{len(panda_serials)} panda found, connecting - {panda_serials}")
+          flash_panda(panda_serials[0])
 
-        # run real pandad
-        os.environ['MANAGER_DAEMON'] = 'pandad'
-        process = subprocess.Popen(["./pandad"], cwd=os.path.join(BASEDIR, "openpilot/selfdrive/pandad"))
-        process.wait()
+          # run real pandad
+          os.environ['MANAGER_DAEMON'] = 'pandad'
+          process = subprocess.Popen(["./pandad"], cwd=os.path.join(BASEDIR, "openpilot/selfdrive/pandad"))
+          process.wait()
+        elif len(panda_serials) > 1:
+          cloudlog.warning(f"multiple supported pandas found, cannot run single-panda pandad: {panda_serials}")
+        else:
+          cloudlog.warning("no supported panda found, retrying...")
     # TODO: wrap all panda exceptions in a base panda exception
     except (usb1.USBErrorNoDevice, usb1.USBErrorPipe):
       # a panda was disconnected while setting everything up. let's try again

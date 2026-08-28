@@ -131,7 +131,14 @@ class Panda:
 
   # from https://github.com/commaai/openpilot/blob/103b4df18cbc38f4129555ab8b15824d1a672bdf/cereal/log.capnp#L648
   HW_TYPE_UNKNOWN = b'\x00'
+  HW_TYPE_WHITE_PANDA = b'\x01'
+  HW_TYPE_GREY_PANDA = b'\x02'
+  HW_TYPE_BLACK_PANDA = b'\x03'
+  HW_TYPE_PEDAL = b'\x04'
+  HW_TYPE_UNO = b'\x05'
+  HW_TYPE_DOS = b'\x06'
   HW_TYPE_RED_PANDA = b'\x07'
+  HW_TYPE_RED_PANDA_V2 = b'\x08'
   HW_TYPE_TRES = b'\x09'
   HW_TYPE_CUATRO = b'\x0a'
   HW_TYPE_BODY = b'\xb1'
@@ -141,8 +148,9 @@ class Panda:
   HEALTH_STRUCT = _parse_c_struct(os.path.join(BASEDIR, "board/health.h"), "health_t")
   CAN_HEALTH_STRUCT = struct.Struct("<BIBBBBBBBBIIIIIIIHHBBBIIII")
 
-  H7_DEVICES = [HW_TYPE_RED_PANDA, HW_TYPE_TRES, HW_TYPE_CUATRO, HW_TYPE_BODY]
-  SUPPORTED_DEVICES = H7_DEVICES
+  H7_DEVICES = [HW_TYPE_RED_PANDA, HW_TYPE_RED_PANDA_V2, HW_TYPE_TRES, HW_TYPE_CUATRO, HW_TYPE_BODY]
+  F4_DEVICES = [HW_TYPE_BLACK_PANDA, HW_TYPE_DOS]
+  SUPPORTED_DEVICES = H7_DEVICES + F4_DEVICES
 
   INTERNAL_DEVICES = (HW_TYPE_TRES, HW_TYPE_CUATRO)
 
@@ -437,7 +445,7 @@ class Panda:
       return
 
     if not fn:
-      fn = os.path.join(FW_PATH, McuType.H7.config.app_fn)
+      fn = os.path.join(FW_PATH, self.mcu_type.config.app_fn)
     assert os.path.isfile(fn)
     logger.debug("flash: main version is %s", self.get_version())
     if not self.bootstub:
@@ -452,7 +460,7 @@ class Panda:
     logger.debug("flash: bootstub version is %s", self.get_version())
 
     # do flash
-    Panda.flash_static(self._handle, code, mcu_type=McuType.H7)
+    Panda.flash_static(self._handle, code, mcu_type=self.mcu_type)
 
     # reconnect
     if reconnect:
@@ -503,7 +511,7 @@ class Panda:
   def up_to_date(self, fn=None) -> bool:
     current = self.get_signature()
     if fn is None:
-      fn = os.path.join(FW_PATH, McuType.H7.config.app_fn)
+      fn = os.path.join(FW_PATH, self.mcu_type.config.app_fn)
     expected = Panda.get_signature_from_firmware(fn)
     return (current == expected)
 
@@ -619,6 +627,10 @@ class Panda:
   def is_internal(self):
     return self.get_type() in Panda.INTERNAL_DEVICES
 
+  @property
+  def mcu_type(self) -> McuType:
+    return McuType.F4 if self.get_type() in Panda.F4_DEVICES else McuType.H7
+
   def get_serial(self):
     """
       Returns the comma-issued dongle ID from our provisioning
@@ -636,7 +648,7 @@ class Panda:
     return self._serial
 
   def get_dfu_serial(self):
-    return PandaDFU.st_serial_to_dfu_serial(self._serial, McuType.H7)
+    return PandaDFU.st_serial_to_dfu_serial(self._serial, self.mcu_type)
 
   def get_uid(self):
     """
@@ -808,3 +820,4 @@ class Panda:
   def read_som_gpio(self) -> bool:
     r = self._handle.controlRead(Panda.REQUEST_IN, 0xc6, 0, 0, 1)
     return r[0] == 1
+

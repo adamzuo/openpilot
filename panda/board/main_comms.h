@@ -46,7 +46,11 @@ static int get_health_pkt(void *dat) {
 
   health->controls_allowed_sp_pkt = (uint8_t)(((controls_allowed || controls_allowed_lateral) ? 1U : 0U) | (controls_allowed ? 2U : 0U));
 
+  #ifdef STM32H7
   health->temperature = dts_get_temperature();
+  #else
+  health->temperature = 0U;
+  #endif
 
   return sizeof(*health);
 }
