@@ -17,8 +17,8 @@ void clock_source_init(bool enable_channel1) {
   // Setup timer
   register_set(&(TIM1->PSC), ((APB2_TIMER_FREQ*100U)-1U), 0xFFFFU);           // Tick on 0.1 ms
   register_set(&(TIM1->ARR), ((CLOCK_SOURCE_PERIOD_MS*10U) - 1U), 0xFFFFU);   // Period
-  register_set(&(TIM1->CCMR1), 0U, 0xFFFFU);                                  // No output on compare
-  register_set(&(TIM1->CCER), TIM_CCER_CC1E | TIM_CCER_CC2NE, 0xFFFFU);       // Enable compares
+  register_set(&(TIM1->CCMR1), 0U, (TIM_CCMR1_OC1M | TIM_CCMR1_OC2M));                                  // No output on compare
+  register_set(&(TIM1->CCER), TIM_CCER_CC1E | TIM_CCER_CC2NE, (TIM_CCER_CC1E | TIM_CCER_CC2NE));       // Enable compares
   register_set(&(TIM1->CCR1), (CLOCK_SOURCE_PULSE_LEN_MS*10U), 0xFFFFU);      // Compare 1 value
   register_set(&(TIM1->CCR2), (CLOCK_SOURCE_PULSE_LEN_MS*10U), 0xFFFFU);      // Compare 2 value
   register_set(&(TIM1->CCR4), (CLOCK_SOURCE_PERIOD_MS*5U), 0xFFFFU);          // For slave timer
@@ -36,26 +36,26 @@ void clock_source_init(bool enable_channel1) {
   set_gpio_alternate(GPIOB, 14, GPIO_AF1_TIM1);
 
   // Set PWM mode
-  register_set(&(TIM1->CCMR1), (0b110UL << TIM_CCMR1_OC1M_Pos) | (0b110UL << TIM_CCMR1_OC2M_Pos), 0xFFFFU);
-  register_set(&(TIM1->CCMR2), (0b110UL << TIM_CCMR2_OC3M_Pos) | (0b111UL << TIM_CCMR2_OC4M_Pos), 0xFFFFU);
+  register_set(&(TIM1->CCMR1), (0b110UL << TIM_CCMR1_OC1M_Pos) | (0b110UL << TIM_CCMR1_OC2M_Pos), (TIM_CCMR1_OC1M | TIM_CCMR1_OC2M));
+  register_set(&(TIM1->CCMR2), (0b110UL << TIM_CCMR2_OC3M_Pos) | (0b111UL << TIM_CCMR2_OC4M_Pos), (TIM_CCMR2_OC3M | TIM_CCMR2_OC4M));
 
   // Enable output
-  register_set(&(TIM1->BDTR), TIM_BDTR_MOE, 0xFFFFU);
+  register_set(&(TIM1->BDTR), TIM_BDTR_MOE, TIM_BDTR_MOE);
 
   // Sync with slave
-  register_set(&(TIM1->SMCR), TIM_SMCR_MSM , 0xFFFFU);
-  register_set(&(TIM1->CR2), (0b0111U << TIM_CR2_MMS_Pos), 0xFFFFU);
-  register_set(&(TIM8->SMCR), (0b0100U << TIM_SMCR_SMS_Pos) | (0b000U << TIM_SMCR_TS_Pos), 0xFFFFU);
+  register_set(&(TIM1->SMCR), TIM_SMCR_MSM, TIM_SMCR_MSM);
+  register_set(&(TIM1->CR2), (0b0111U << TIM_CR2_MMS_Pos), TIM_CR2_MMS);
+  register_set(&(TIM8->SMCR), (0b0100U << TIM_SMCR_SMS_Pos) | (0b000U << TIM_SMCR_TS_Pos), (TIM_SMCR_SMS | TIM_SMCR_TS));
 
   // Setup slave timer (TIM8)
   register_set(&(TIM8->PSC), TIM1->PSC, 0xFFFFU);
   register_set(&(TIM8->ARR), TIM1->ARR, 0xFFFFU);
-  register_set(&(TIM8->CCMR2), (0b110UL << TIM_CCMR2_OC3M_Pos), 0xFFFFU);
+  register_set(&(TIM8->CCMR2), (0b110UL << TIM_CCMR2_OC3M_Pos), TIM_CCMR2_OC3M);
   register_set(&(TIM8->CCR3), (CLOCK_SOURCE_PULSE_LEN_MS * 10U), 0xFFFFU);
-  register_set(&(TIM8->CCER), TIM_CCER_CC3NE, 0xFFFFU);
+  register_set(&(TIM8->CCER), TIM_CCER_CC3NE, TIM_CCER_CC3NE);
 
   // MOE for TIM8 as well
-  register_set(&(TIM8->BDTR), TIM_BDTR_MOE, 0xFFFFU);
+  register_set(&(TIM8->BDTR), TIM_BDTR_MOE, TIM_BDTR_MOE);
 
   // Set GPIO
   set_gpio_alternate(GPIOB, 15, GPIO_AF3_TIM8);

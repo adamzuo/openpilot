@@ -161,6 +161,14 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
       resp[0] = current_board->read_som_gpio();
       resp_len = 1;
       break;
+    // **** 0xc9: debug fault info
+    case 0xc9:
+      ((uint32_t *)resp)[0] = DBG_FAULT_MARK;
+      ((uint32_t *)resp)[1] = DBG_FAULT_PC;
+      ((uint32_t *)resp)[2] = DBG_FAULT_LR;
+      ((uint32_t *)resp)[3] = *(volatile uint32_t *)0x2001C00CU;
+      resp_len = 16;
+      break;
     // **** 0xd0: fetch serial (aka the provisioned dongle ID)
     case 0xd0:
       // addresses are OTP

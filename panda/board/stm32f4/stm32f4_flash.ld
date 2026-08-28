@@ -34,7 +34,10 @@ ENTRY(Reset_Handler)
 
 /* Highest address of the user mode stack */
 enter_bootloader_mode = 0x2001FFFC;
-_estack = 0x2001FFFC;    /* end of 128K RAM on AHB bus*/
+/* STM32F413 has 320K contiguous SRAM (0x20000000-0x2004FFFF). The stack must
+   sit ABOVE .bss (which grows past 0x2001FFFC with FD-sized CANPacket_t), so
+   put it at the top of SRAM instead of the original 128K mark. */
+_estack = 0x2004FFFC;    /* end of 320K RAM */
 _app_start = 0x08004000; /* Reserve Sector 0(16K) for bootloader */
 
 /* Generate a link error if heap and stack don't fit into RAM */

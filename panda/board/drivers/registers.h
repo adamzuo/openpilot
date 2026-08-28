@@ -66,6 +66,7 @@ void check_registers(void){
           print("\n");
         #endif
         fault_occurred(FAULT_REGISTER_DIVERGENT);
+        *(volatile uint32_t *)0x2001C00CU = (uint32_t) register_map[i].address;
       }
       EXIT_CRITICAL()
     }

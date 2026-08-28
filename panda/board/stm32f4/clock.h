@@ -11,7 +11,7 @@ void clock_init(void) {
   // AHB = 96MHz
   // APB1 = 48MHz
   // APB2 = 48MHz
-  register_set(&(RCC->CFGR), RCC_CFGR_HPRE_DIV1 | RCC_CFGR_PPRE2_DIV2 | RCC_CFGR_PPRE1_DIV2, 0xFF7FFCF3U);
+  register_set(&(RCC->CFGR), RCC_CFGR_HPRE_DIV1 | RCC_CFGR_PPRE2_DIV2 | RCC_CFGR_PPRE1_DIV2, 0xFF7FFCF0U); // exclude SWS (hw-changed)
 
   // 16MHz crystal
   // PLLM: 8
