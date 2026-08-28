@@ -38,7 +38,9 @@ void early_initialization(void) {
       (enter_bootloader_mode != ENTER_BOOTLOADER_MAGIC) &&
       (enter_bootloader_mode != ENTER_SOFTLOADER_MAGIC)) {
     enter_bootloader_mode = BOOT_NORMAL;
-    NVIC_SystemReset();
+    // NOTE: no NVIC_SystemReset here - a stale RAM value during a plain
+    // hardware-reset boot was observed to hang before USB init on this board.
+    // Just clear the stale value and continue.
   }
 
   // if wrong chip, reboot
