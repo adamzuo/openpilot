@@ -91,8 +91,7 @@ class STBootloaderUSBHandle(BaseSTBootloaderHandle):
   def jump(self, address):
     self._libusb_handle.controlWrite(0x21, self.DFU_DNLOAD, 0, 0, b"\x21" + struct.pack("I", address))
     self._status()
-    try:
-      self._libusb_handle.controlWrite(0x21, self.DFU_DNLOAD, 2, 0, b"")
-      _ = str(self._libusb_handle.controlRead(0x21, self.DFU_GETSTATUS, 0, 0, 6))
-    except Exception:
-      pass
+    # NOTE: no trailing GETSTATUS after the Go. The read would block for the
+    # 15s timeout and then hit the freshly booted app over USB without claiming
+    # the interface, which disconnects it.
+    self._libusb_handle.controlWrite(0x21, self.DFU_DNLOAD, 2, 0, b"")
