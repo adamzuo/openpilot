@@ -180,8 +180,7 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
           // only allow bootloader entry on debug builds
           #ifdef ALLOW_DEBUG
             print("-> entering bootloader\n");
-            enter_bootloader_mode = ENTER_BOOTLOADER_MAGIC;
-            NVIC_SystemReset();
+            jump_to_bootloader();
           #endif
           break;
         case 1:

@@ -33,15 +33,10 @@ void early_initialization(void) {
   // Init register and interrupt tables
   init_registers();
 
-  // after it's been in the bootloader, things are initted differently, so we reset
-  if ((enter_bootloader_mode != BOOT_NORMAL) &&
-      (enter_bootloader_mode != ENTER_BOOTLOADER_MAGIC) &&
-      (enter_bootloader_mode != ENTER_SOFTLOADER_MAGIC)) {
-    enter_bootloader_mode = BOOT_NORMAL;
-    // NOTE: no NVIC_SystemReset here - a stale RAM value during a plain
-    // hardware-reset boot was observed to hang before USB init on this board.
-    // Just clear the stale value and continue.
-  }
+  // Always clear any bootloader magic left in RAM. A stale value from a
+  // previous bootloader/DFU session would otherwise send us back into the ROM
+  // bootloader on a plain hardware reset (which then does not enumerate USB).
+  enter_bootloader_mode = BOOT_NORMAL;
 
   // if wrong chip, reboot
   volatile unsigned int id = DBGMCU->IDCODE;
@@ -57,10 +52,6 @@ void early_initialization(void) {
 
   detect_board_type();
 
-  if (enter_bootloader_mode == ENTER_BOOTLOADER_MAGIC) {
-    led_init();
-    current_board->init_bootloader();
-    led_set(LED_GREEN, 1);
-    jump_to_bootloader();
-  }
+  // Bootloader entry is done directly by the 0xd1 comms handler via
+  // jump_to_bootloader(), not through a magic RAM value (which can be stale).
 }
