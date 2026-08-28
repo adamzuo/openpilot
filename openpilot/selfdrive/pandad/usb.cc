@@ -68,10 +68,18 @@ PandaUsbHandle::PandaUsbHandle(std::string serial) : PandaCommsHandle(serial) {
     libusb_detach_kernel_driver(dev_handle, 0);
   }
 
+  // The device may already be in the desired configuration (e.g. right after
+  // a python pandad session); BUSY here is not fatal.
   err = libusb_set_configuration(dev_handle, 1);
-  if (err != 0) { goto fail; }
+  if (err != 0 && err != LIBUSB_ERROR_BUSY) { goto fail; }
 
-  err = libusb_claim_interface(dev_handle, 0);
+  // Retry claiming on BUSY: another process may still be releasing the interface.
+  for (int i = 0; i < 5; i++) {
+    err = libusb_claim_interface(dev_handle, 0);
+    if (err == 0) break;
+    if (err != LIBUSB_ERROR_BUSY) goto fail;
+    usleep(200000);
+  }
   if (err != 0) { goto fail; }
 
   return;
@@ -80,6 +88,7 @@ fail:
   if (dev_list != NULL) {
     libusb_free_device_list(dev_list, 1);
   }
+  LOGE("failed to connect to panda over USB: %s", libusb_strerror((enum libusb_error)err));
   cleanup();
   throw std::runtime_error("Error connecting to panda");
 }
