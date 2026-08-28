@@ -7,6 +7,8 @@
 //       CAN3_TX, CAN3_RX0, CAN3_SCE
 
 CAN_TypeDef *cans[CAN_ARRAY_SIZE] = {CAN1, CAN2, CAN3};
+
+int pending_can_live = 0;
 uint8_t can_irq_number[CAN_IRQS_ARRAY_SIZE][CAN_IRQS_ARRAY_SIZE] = {
   { CAN1_TX_IRQn, CAN1_RX0_IRQn, CAN1_SCE_IRQn },
   { CAN2_TX_IRQn, CAN2_RX0_IRQn, CAN2_SCE_IRQn },
