@@ -143,6 +143,32 @@ GATE_DEBOUNCE_FRAMES = 3
 GATE_PATH_JUMP_LIMIT = 1.0          # m
 LANE_GATE_DV_PCT = 0.25
 
+# dp(第九版): 雷達橫向速度切入預測（cut-in prediction）
+# 背景（log 032/033，約 105 km/h）：藍色小車從右車道切入，雷達 57.5s 已看到它壓線、以約
+# 1 m/s 橫向速度切入，但模型 leadsV3[0] 仍指向 57m 外的遠車（prob 1.0），換 lead 時距離又
+# 嚴重高估，原廠配對與 fuzzy 都判定失敗，直到 59.4s 才鎖到藍車，駕駛 57.89s 已踩煞車。
+# 雷達主導救援（走廊 ±1.0m 內連續 1 秒）也要 59.25s 才進入走廊，救不到。
+# 做法：對每個雷達目標以 alpha-beta 濾波估計「相對本車路徑的橫向偏移 off 與橫向速度 vy」，
+# 預測即將進入走廊、且縱向正在接近時，連續成立 CUTIN_CONFIRM_FRAMES 幀即成為切入候選；
+# 與救援共用仲裁：沒有前車、或比現有前車更近（且不是同一物體）才採用。不依賴視覺機率。
+CUTIN_MIN_V_EGO = 10.0              # m/s（36 km/h）以下不啟用，低速交給原廠低速覆寫
+CUTIN_MIN_DIST = 3.0                # m
+CUTIN_MAX_DIST_BP = [10.0, 30.0]    # 本車速 m/s
+CUTIN_MAX_DIST_V = [20.0, 50.0]     # 偵測距離上限 m（約 1.6~2 秒車距）
+CUTIN_CORRIDOR = 1.0                # 預測要進入的走廊半寬 m（與雷達主導救援進入條件相同）
+CUTIN_OFF_MAX = 2.5                 # 候選偏移上限：約為目標車身內緣壓到車道線（半車道 1.75m + 半車寬 0.85m）
+                                    # log：設 4.0 時 92431 36.3s、032/033 109.7s 各有 1 幀誤採用（大車反射點橫向跳動，
+                                    # 偏移 2.7~3.5m），設 2.5 後消失，藍車仍在 57.65s 採用
+CUTIN_VY_MIN = 0.3                  # 橫向速度下限 m/s（擋雜訊）
+CUTIN_VY_MAX = 2.5                  # 橫向速度上限 m/s（擋大車多反射點跳動）
+CUTIN_T_ENTER = 1.5                 # 預測在此秒數內進入走廊
+CUTIN_CLOSING_VREL = -0.5           # 縱向接近（vRel < 此值）……
+CUTIN_CLOSE_HEADWAY = 1.0           # ……或距離 < 本車速 × 此秒數（近距離同速切入）
+CUTIN_CONFIRM_FRAMES = 4            # 連續成立幀數（0.2 秒）
+CUTIN_HOLD_OFF = 2.5                # 已採用後，偏移 < 此值且未遠離就維持
+CUTIN_ALPHA = 0.3                   # alpha-beta 濾波：位置增益
+CUTIN_BETA = 0.05                   # alpha-beta 濾波：速度增益
+
 # dp(修正 4): 模型路徑（modelV2.position）預測。車速低於此值時 position.x 會擠在 0 附近、
 # 不單調：橫向閘門改為假設直行，雷達主導救援停用。
 MODEL_PATH_MIN_SPEED = 3.0          # m/s
@@ -167,8 +193,8 @@ _LOW_SPEED_LAST = {'track': None}   # dp: 上一幀低速覆寫選到的雷達�
 # 都對輸出的 aLeadK 做變化率限制，避免瞬間跳動觸發幽靈煞車。
 # dp(第七版): 加上 last_aLeadK_track，換成「不同物體」時不做變化率限制（見輸出段說明）。
 _LEAD_STATE_CACHE = {
-    0: {'track': None, 'absent': 0, 'last_aLeadK': None, 'last_aLeadK_track': None, 'rescue': False, 'switch_id': None, 'switch_cnt': 0},
-    1: {'track': None, 'absent': 0, 'last_aLeadK': None, 'last_aLeadK_track': None, 'rescue': False, 'switch_id': None, 'switch_cnt': 0}
+    0: {'track': None, 'absent': 0, 'last_aLeadK': None, 'last_aLeadK_track': None, 'rescue': False, 'cutin': False, 'cutin_track': None, 'switch_id': None, 'switch_cnt': 0},
+    1: {'track': None, 'absent': 0, 'last_aLeadK': None, 'last_aLeadK_track': None, 'rescue': False, 'cutin': False, 'cutin_track': None, 'switch_id': None, 'switch_cnt': 0}
 }
 MAX_ALEADK_DELTA_PER_FRAME = 1.0    # aLeadK 每幀最大允許變化量 (m/s²)，可依實測調整
 
@@ -202,6 +228,10 @@ class TrackDP(Track):
     self.gate_last_path_y = {0: None, 1: None}     # dp: 上一幀此目標距離處的走廊中心
     self.closing_speed_streak = {0: 0, 1: 0}   # dp: 連續幾幀符合「正在快速接近」
     self.radar_rescue_frames = 0               # dp: 連續符合雷達主導救援條件的幀數（與 lead_idx 無關）
+    self.cutin_off = None                      # dp(第九版): 濾波後相對本車路徑的橫向偏移（左正）
+    self.cutin_vy = 0.0                        # dp(第九版): 濾波後橫向速度（m/s，左正）
+    self.cutin_frames = 0                      # dp(第九版): 連續符合切入預測的幀數
+    self.cutin_active = False                  # dp(第九版): 已被採用為切入前車
 
   def _check_closing_speed_fallback(self, lead_idx: int, v_ego: float) -> bool:
     # 比照原廠 vel_sane 的 (v_ego + vRel > 3) 這個條件（目標絕對速度 > 3 m/s，即移動目標），
@@ -240,6 +270,44 @@ class TrackDP(Track):
     else:
       self.gate_flip_cnt[lead_idx] = 0
     return self.is_out_of_lane[lead_idx]
+
+  def update_cutin(self, v_ego: float, path_valid: bool, path_y: float, gated: bool) -> None:
+    # dp(第九版): 每幀呼叫一次（只在 leadOne 那次）。gated=True 表示本車轉彎或變換車道中，暫停判定。
+    if not path_valid:
+      self.cutin_off = None
+      self.cutin_frames = 0
+      self.cutin_active = False
+      return
+    meas = self.yRel - path_y
+    if self.cutin_off is None:
+      self.cutin_off = meas
+      self.cutin_vy = 0.0
+    else:
+      pred = self.cutin_off + self.cutin_vy * DT_MDL
+      res = meas - pred
+      self.cutin_off = pred + CUTIN_ALPHA * res
+      self.cutin_vy = self.cutin_vy + (CUTIN_BETA / DT_MDL) * res
+    off, vy = self.cutin_off, self.cutin_vy
+
+    v_abs = self.vRel + v_ego
+    max_d = float(np.interp(v_ego, CUTIN_MAX_DIST_BP, CUTIN_MAX_DIST_V))
+    base_ok = (not gated and v_ego > CUTIN_MIN_V_EGO and CUTIN_MIN_DIST < self.dRel < max_d and
+               v_abs > max(3.0, DYNAMIC_SPEED_PCT * v_ego) and
+               (self.vRel < CUTIN_CLOSING_VREL or self.dRel < CUTIN_CLOSE_HEADWAY * v_ego))
+    toward = off * vy < 0.0
+
+    if self.cutin_active:
+      # 已採用：偏移仍在 CUTIN_HOLD_OFF 內、沒有明顯遠離路徑就維持（進入走廊後也維持）
+      moving_away = (off * vy > 0.0) and abs(vy) > CUTIN_VY_MIN and abs(off) > CUTIN_CORRIDOR
+      if not (base_ok and abs(off) < CUTIN_HOLD_OFF and not moving_away):
+        self.cutin_active = False
+        self.cutin_frames = 0
+      return
+
+    hit = (base_ok and CUTIN_CORRIDOR < abs(off) < CUTIN_OFF_MAX and toward and
+           CUTIN_VY_MIN < abs(vy) < CUTIN_VY_MAX and
+           (abs(off) - CUTIN_CORRIDOR) / abs(vy) < CUTIN_T_ENTER)
+    self.cutin_frames = self.cutin_frames + 1 if hit else 0
 
   def update_radar_rescue(self, v_ego: float, path_valid: bool, path_y: float, steering_angle_deg: float,
                           is_active: bool = False) -> None:
@@ -346,6 +414,7 @@ def get_lead_ext(
   steering_angle_deg: float = 0.0,
   low_speed_override: bool = True,
   raw_lead_prob: float | None = None,
+  lane_change: bool = False,
   path_x: list[float] | None = None,
   path_y: list[float] | None = None,
 ) -> dict[str, Any]:
@@ -356,7 +425,8 @@ def get_lead_ext(
   steering_angle_deg：雷達主導救援的方向盤角度開關。
   raw_lead_prob：未濾波的原始 lead 機率，雷達主導救援的視覺信心度下限只看這個值；
   未提供時（例如測試）退回使用濾波後的 lead_prob。
-  path_x/path_y：modelV2.position，供橫向閘門、鎖定黏著與雷達主導救援的走廊判斷。
+  lane_change：本車正在變換車道（模型 laneChangeState 非 off，或方向燈亮），切入預測暫停。
+  path_x/path_y：modelV2.position，供橫向閘門、鎖定黏著、雷達主導救援與切入預測的走廊判斷。
   radard.py 一律以關鍵字參數傳入上述擴充參數，避免位置參數錯位。
   """
   lead_idx = 0 if low_speed_override else 1
@@ -414,6 +484,7 @@ def get_lead_ext(
     for track in tracks.values():
       track.update_radar_rescue(v_ego, use_model_path, _path_y_at(track.dRel), steering_angle_deg,
                                 is_active=track is active_rescue)
+      track.update_cutin(v_ego, use_model_path, _path_y_at(track.dRel), is_turning or lane_change)
     rescue_candidates = [t for t in tracks.values() if t.radar_rescue_frames >= RADAR_RESCUE_CONFIRM_FRAMES]
     if ready and rescue_prob >= RADAR_RESCUE_MIN_PROB and len(rescue_candidates) > 0:
       rescue_track = min(rescue_candidates, key=lambda t: t.dRel)
@@ -439,7 +510,7 @@ def get_lead_ext(
     matched_track = prev_track
 
   # dp(切入閃爍修正): 目前鎖定的雷達目標是否仍在雷達清單中、且仍在本車走廊內
-  locked = cache['track'] if (cache['track'] is not None and not cache['rescue']) else None
+  locked = cache['track'] if (cache['track'] is not None and not cache['rescue'] and not cache['cutin']) else None
   locked_in_path = (locked is not None and tracks.get(locked.identifier) is locked and
                     (locked.vRel + v_ego) > max(1.0, DYNAMIC_SPEED_PCT * v_ego) and
                     not locked.is_out_of_lane[lead_idx] and
@@ -472,7 +543,7 @@ def get_lead_ext(
   held_track = None
   if matched_track is None and cache['track'] is not None and cache['absent'] + 1 <= hold_limit:
     held_track = cache['track']
-  held_is_rescue = held_track is not None and cache['rescue']
+  held_is_rescue = held_track is not None and (cache['rescue'] or cache['cutin'])   # 救援/切入前車皆不續命
 
   # 現有前車距離（不含來自救援的續命目標，救援目標每幀都要重新和現有前車比較）
   if matched_track is not None:
@@ -497,6 +568,7 @@ def get_lead_ext(
     cache['track'] = rescue_track
     cache['absent'] = 0
     cache['rescue'] = True
+    cache['cutin'] = False
     # 同步總視覺信心度門檻：這一幀的前車是在 RADAR_RESCUE_MIN_PROB 門檻下被接受的
     current_prob_thres = min(current_prob_thres, RADAR_RESCUE_MIN_PROB)
     cloudlog.debug(
@@ -510,6 +582,7 @@ def get_lead_ext(
     cache['track'] = matched_track
     cache['absent'] = 0
     cache['rescue'] = False
+    cache['cutin'] = False
   else:
     selected_track = None
     if held_is_rescue:
@@ -520,6 +593,7 @@ def get_lead_ext(
       cache['absent'] = 0
       cache['last_aLeadK'] = None
       cache['rescue'] = False
+      cache['cutin'] = False
     elif cache['track'] is not None:
       cache['absent'] += 1
       if cache['absent'] <= hold_limit:
@@ -529,12 +603,56 @@ def get_lead_ext(
         cache['absent'] = 0
         cache['last_aLeadK'] = None  # lead 真正消失，重置參考基準，避免下一個新目標被錯誤地拿舊值做限制
         cache['rescue'] = False
+        cache['cutin'] = False
     if selected_track is None:
       vision_lead = vision_cand
 
+  # dp(第九版): 切入預測仲裁（只處理 leadOne）。候選 = 已採用中的切入目標，或連續成立
+  # CUTIN_CONFIRM_FRAMES 幀的新目標；取最近者。沒有前車、或比現有前車更近且不是同一物體才採用。
+  is_cutin = False
+  cutin_prev = cache['cutin_track']
+  cache['cutin_track'] = None
+  if lead_idx == 0 and ready:
+    cutin_cands = [t for t in tracks.values() if t.cutin_active or t.cutin_frames >= CUTIN_CONFIRM_FRAMES]
+    if len(cutin_cands) > 0:
+      cutin_track = min(cutin_cands, key=lambda t: t.dRel)
+      # 同一台車的多個反射點都成為候選時，沿用上一幀的前車點，避免在反射點之間互換
+      prev_t = cutin_prev
+      if (prev_t is not None and prev_t is not cutin_track and any(t is prev_t for t in cutin_cands) and
+          _is_same_object(prev_t, cutin_track)):
+        cutin_track = prev_t
+      if selected_track is not None:
+        cur_d = selected_track.dRel
+        same = selected_track is cutin_track or _is_same_object(selected_track, cutin_track)
+      elif vision_lead is not None:
+        cur_d = vision_lead['dRel']
+        same = False
+      else:
+        cur_d = float('inf')
+        same = False
+      if same:
+        cutin_track.cutin_active = True   # 已由其他路徑選中同一物體：保持狀態，交由原路徑輸出
+      elif cutin_track.dRel < cur_d:
+        cutin_track.cutin_active = True
+        selected_track = cutin_track
+        vision_lead = None
+        is_cutin = True
+        cache['track'] = cutin_track
+        cache['absent'] = 0
+        cache['rescue'] = False
+        cache['cutin'] = True             # 與救援相同：不享有續命，條件不成立當幀撤銷
+        cache['cutin_track'] = cutin_track
+      else:
+        cutin_track.cutin_active = False
+    for t in tracks.values():
+      if t.cutin_active and t is not selected_track and not (selected_track is not None and _is_same_object(selected_track, t)):
+        t.cutin_active = False
+
   lead_dict = {'status': False}
   if selected_track is not None:
-    lead_dict = selected_track.get_RadarState(lead_prob)
+    # dp(第九版): 切入前車的 modelProb 填 0（比照原廠低速覆寫）。此時 leadsV3[0].prob 描述的是
+    # 另一台車，不能拿來當切入車的視覺確認，也避免 MPC 以此機率觸發 FCW。
+    lead_dict = selected_track.get_RadarState(0.0 if is_cutin else lead_prob)
 
     # dp: 不管是「凍結續命中」還是「剛恢復匹配、瞬間跳到最新卡曼值」，
     # 都對 aLeadK 做變化率限制，避免瞬間跳動被誤判成前車突然減速（幽靈煞車）。
@@ -553,7 +671,8 @@ def get_lead_ext(
     cache['last_aLeadK_track'] = selected_track
 
     # 視覺加速度雙重驗證阻尼
-    model_tau = get_model_lead_tau(lead_msg, lead_prob)
+    # dp(第九版): 切入 / 雷達主導救援的前車與視覺前車可能不是同一台車，不套用以視覺加速度推得的 aLeadTau
+    model_tau = get_model_lead_tau(lead_msg, lead_prob) if not (is_cutin or is_radar_rescue) else None
     if model_tau is not None:
       lead_dict['aLeadTau'] = model_tau
 
