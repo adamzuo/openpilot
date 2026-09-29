@@ -217,6 +217,9 @@ class RadarD:
     #   >=10 deg/s 佔 4~14% 幀（市區閃機車、路面修正就會觸發），>=20 deg/s 佔 1~6%。
     is_turning = abs(sm['carState'].steeringAngleDeg) >= 15.0 or abs(sm['carState'].steeringRateDeg) >= 20.0
     steering_angle_deg = sm['carState'].steeringAngleDeg
+    # dp(第九版): 本車正在變換車道（模型換道狀態非 off，或方向燈亮）時，暫停雷達切入預測
+    lane_change = (sm['modelV2'].meta.laneChangeState != log.LaneChangeState.off or
+                   sm['carState'].leftBlinker or sm['carState'].rightBlinker)
 
     ar_pts = {pt.trackId: [pt.dRel, pt.yRel, pt.vRel, pt.measured] for pt in rr.points}
 
@@ -265,10 +268,10 @@ class RadarD:
       # dp(第七版): 擴充參數一律用關鍵字傳入，避免位置參數錯位；原廠 get_lead 以 **kwargs 吸收。
       self.radar_state.leadOne = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, self.lead_prob_filters[0].x,
                                           low_speed_override=True, is_turning=is_turning, steering_angle_deg=steering_angle_deg,
-                                          raw_lead_prob=leads_v3[0].prob, path_x=path_x, path_y=path_y)
+                                          raw_lead_prob=leads_v3[0].prob, lane_change=lane_change, path_x=path_x, path_y=path_y)
       self.radar_state.leadTwo = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, self.lead_prob_filters[1].x,
                                           low_speed_override=False, is_turning=is_turning, steering_angle_deg=steering_angle_deg,
-                                          raw_lead_prob=leads_v3[1].prob, path_x=path_x, path_y=path_y)
+                                          raw_lead_prob=leads_v3[1].prob, lane_change=lane_change, path_x=path_x, path_y=path_y)
 
   def publish(self, pm: messaging.PubMaster):
     assert self.radar_state is not None
