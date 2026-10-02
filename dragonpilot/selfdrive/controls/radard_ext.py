@@ -143,7 +143,7 @@ GATE_DEBOUNCE_FRAMES = 3
 GATE_PATH_JUMP_LIMIT = 1.0          # m
 LANE_GATE_DV_PCT = 0.25
 
-# dp(第九版): 雷達橫向速度切入預測（cut-in prediction）
+# dp(第九版 / 9.1 穩定性補強): 雷達橫向速度切入預測（cut-in prediction）
 # 背景（log 032/033，約 105 km/h）：藍色小車從右車道切入，雷達 57.5s 已看到它壓線、以約
 # 1 m/s 橫向速度切入，但模型 leadsV3[0] 仍指向 57m 外的遠車（prob 1.0），換 lead 時距離又
 # 嚴重高估，原廠配對與 fuzzy 都判定失敗，直到 59.4s 才鎖到藍車，駕駛 57.89s 已踩煞車。
@@ -169,6 +169,10 @@ CUTIN_HOLD_OFF = 2.5                # 已採用後，偏移 < 此值且未遠離
 CUTIN_ALPHA = 0.3                   # alpha-beta 濾波：位置增益
 CUTIN_BETA = 0.05                   # alpha-beta 濾波：速度增益
 
+# dp(9.1): 切入雷達量測 freshness。允許 Toyota 雷達短暫 2 幀（約 0.1s）非實測/外推，
+# 超過後不再累積或維持 cut-in，避免長時間外推點單靠橫向估計成為切入前車。
+CUTIN_MEASURED_MAX_AGE = 2           # 幀；0=本幀實測，1~2=短暫容忍，>2=失效
+
 # dp(修正 4): 模型路徑（modelV2.position）預測。車速低於此值時 position.x 會擠在 0 附近、
 # 不單調：橫向閘門改為假設直行，雷達主導救援停用。
 MODEL_PATH_MIN_SPEED = 3.0          # m/s
@@ -187,6 +191,10 @@ def _is_same_object(a, b) -> bool:
 
 
 _LOW_SPEED_LAST = {'track': None}   # dp: 上一幀低速覆寫選到的雷達目標（重複點閃爍修正用）
+
+# dp(9.1): 保存上一幀 leadOne 看到的 Track 物件。當 Toyota 雷達把同一實體車換成新 trackId 時，
+# 用於把 cut-in alpha-beta 狀態移交給新 Track，避免 vy 歸零、4 幀確認重新開始。
+_CUTIN_PREV_TRACKS = {}
 
 # 全域快取：改回 Candy 版邏輯，直接快取 Track 物件本身
 # dp: 額外加上 last_aLeadK，用來在「凍結中」跟「剛恢復匹配」兩種情況下，
@@ -232,6 +240,8 @@ class TrackDP(Track):
     self.cutin_vy = 0.0                        # dp(第九版): 濾波後橫向速度（m/s，左正）
     self.cutin_frames = 0                      # dp(第九版): 連續符合切入預測的幀數
     self.cutin_active = False                  # dp(第九版): 已被採用為切入前車
+    self.cutin_measured_age = 0                # dp(9.1): 距離最近一次真實雷達量測的幀數
+    self.cutin_diag_armed = False              # dp(9.1): 防止候選成立診斷重複洗 log
 
   def _check_closing_speed_fallback(self, lead_idx: int, v_ego: float) -> bool:
     # 比照原廠 vel_sane 的 (v_ego + vRel > 3) 這個條件（目標絕對速度 > 3 m/s，即移動目標），
@@ -273,11 +283,26 @@ class TrackDP(Track):
 
   def update_cutin(self, v_ego: float, path_valid: bool, path_y: float, gated: bool) -> None:
     # dp(第九版): 每幀呼叫一次（只在 leadOne 那次）。gated=True 表示本車轉彎或變換車道中，暫停判定。
+    # dp(9.1): 加入 radar measurement freshness；短暫漏拍最多容忍 CUTIN_MEASURED_MAX_AGE 幀。
+    if bool(self.measured):
+      self.cutin_measured_age = 0
+    else:
+      self.cutin_measured_age = min(self.cutin_measured_age + 1, CUTIN_MEASURED_MAX_AGE + 1)
+    fresh = self.cutin_measured_age <= CUTIN_MEASURED_MAX_AGE
+
     if not path_valid:
+      if self.cutin_active or self.cutin_frames > 0:
+        cloudlog.debug(
+          f"[RadarD_CutinReset_DP] id={self.identifier} reason=path_invalid "
+          f"d={self.dRel:.1f} y={self.yRel:.2f} age={self.cutin_measured_age}"
+        )
       self.cutin_off = None
+      self.cutin_vy = 0.0
       self.cutin_frames = 0
       self.cutin_active = False
+      self.cutin_diag_armed = False
       return
+
     meas = self.yRel - path_y
     if self.cutin_off is None:
       self.cutin_off = meas
@@ -291,7 +316,7 @@ class TrackDP(Track):
 
     v_abs = self.vRel + v_ego
     max_d = float(np.interp(v_ego, CUTIN_MAX_DIST_BP, CUTIN_MAX_DIST_V))
-    base_ok = (not gated and v_ego > CUTIN_MIN_V_EGO and CUTIN_MIN_DIST < self.dRel < max_d and
+    base_ok = (fresh and not gated and v_ego > CUTIN_MIN_V_EGO and CUTIN_MIN_DIST < self.dRel < max_d and
                v_abs > max(3.0, DYNAMIC_SPEED_PCT * v_ego) and
                (self.vRel < CUTIN_CLOSING_VREL or self.dRel < CUTIN_CLOSE_HEADWAY * v_ego))
     toward = off * vy < 0.0
@@ -300,14 +325,33 @@ class TrackDP(Track):
       # 已採用：偏移仍在 CUTIN_HOLD_OFF 內、沒有明顯遠離路徑就維持（進入走廊後也維持）
       moving_away = (off * vy > 0.0) and abs(vy) > CUTIN_VY_MIN and abs(off) > CUTIN_CORRIDOR
       if not (base_ok and abs(off) < CUTIN_HOLD_OFF and not moving_away):
+        reason = 'stale' if not fresh else ('gated' if gated else ('moving_away' if moving_away else 'base_condition'))
+        cloudlog.debug(
+          f"[RadarD_CutinRelease_DP] id={self.identifier} reason={reason} "
+          f"d={self.dRel:.1f} off={off:.2f} vy={vy:.2f} vRel={self.vRel:.2f} "
+          f"aLeadK={self.aLeadK:.2f} aLeadTau={float(self.aLeadTau.x):.2f} age={self.cutin_measured_age}"
+        )
         self.cutin_active = False
         self.cutin_frames = 0
+        self.cutin_diag_armed = False
       return
 
     hit = (base_ok and CUTIN_CORRIDOR < abs(off) < CUTIN_OFF_MAX and toward and
            CUTIN_VY_MIN < abs(vy) < CUTIN_VY_MAX and
            (abs(off) - CUTIN_CORRIDOR) / abs(vy) < CUTIN_T_ENTER)
     self.cutin_frames = self.cutin_frames + 1 if hit else 0
+
+    if self.cutin_frames >= CUTIN_CONFIRM_FRAMES and not self.cutin_diag_armed:
+      t_enter = (abs(off) - CUTIN_CORRIDOR) / max(abs(vy), 1e-3)
+      cloudlog.debug(
+        f"[RadarD_CutinArmed_DP] id={self.identifier} d={self.dRel:.1f} y={self.yRel:.2f} "
+        f"off={off:.2f} vy={vy:.2f} tEnter={t_enter:.2f}s vRel={self.vRel:.2f} "
+        f"vLead={self.vLead:.2f} aLeadK={self.aLeadK:.2f} aLeadTau={float(self.aLeadTau.x):.2f} "
+        f"frames={self.cutin_frames} age={self.cutin_measured_age}"
+      )
+      self.cutin_diag_armed = True
+    elif self.cutin_frames == 0:
+      self.cutin_diag_armed = False
 
   def update_radar_rescue(self, v_ego: float, path_valid: bool, path_y: float, steering_angle_deg: float,
                           is_active: bool = False) -> None:
@@ -481,10 +525,47 @@ def get_lead_ext(
         active_rescue = heir
       else:
         active_rescue = None
+    # dp(9.1): cut-in 狀態跨 trackId 繼承。只處理上一幀已消失、且確實已有 cut-in 濾波/確認
+    # 狀態的 Track；新 Track 必須符合既有 _is_same_object() 的 d/y/v 三重限制。
+    # 若新 Track 自己已有更成熟的 cut-in 狀態則不覆寫。
+    prev_tracks = list(_CUTIN_PREV_TRACKS.values())
+    for old in prev_tracks:
+      if tracks.get(old.identifier) is old:
+        continue
+      meaningful = (old.cutin_off is not None and
+                    (old.cutin_frames > 0 or old.cutin_active or abs(old.cutin_vy) >= 0.5 * CUTIN_VY_MIN))
+      if not meaningful:
+        continue
+      heirs = [t for t in tracks.values() if _is_same_object(old, t)]
+      if len(heirs) == 0:
+        continue
+      heir = min(heirs, key=lambda t: abs(t.dRel - old.dRel) + abs(t.yRel - old.yRel) + 0.5 * abs(t.vRel - old.vRel))
+      if old.cutin_active or old.cutin_frames > heir.cutin_frames:
+        old_id = old.identifier
+        heir.cutin_off = old.cutin_off
+        heir.cutin_vy = old.cutin_vy
+        heir.cutin_frames = max(heir.cutin_frames, old.cutin_frames)
+        heir.cutin_active = heir.cutin_active or old.cutin_active
+        heir.cutin_measured_age = 0 if bool(heir.measured) else min(old.cutin_measured_age + 1, CUTIN_MEASURED_MAX_AGE + 1)
+        heir.cutin_diag_armed = old.cutin_diag_armed
+        cloudlog.debug(
+          f"[RadarD_CutinInherit_DP] {old_id}->{heir.identifier} d={heir.dRel:.1f} y={heir.yRel:.2f} "
+          f"off={heir.cutin_off:.2f} vy={heir.cutin_vy:.2f} frames={heir.cutin_frames} "
+          f"active={int(heir.cutin_active)} age={heir.cutin_measured_age}"
+        )
+        if cache0.get('cutin_track') is old:
+          cache0['cutin_track'] = heir
+        if cache0.get('track') is old and cache0.get('cutin'):
+          cache0['track'] = heir
+
     for track in tracks.values():
       track.update_radar_rescue(v_ego, use_model_path, _path_y_at(track.dRel), steering_angle_deg,
                                 is_active=track is active_rescue)
       track.update_cutin(v_ego, use_model_path, _path_y_at(track.dRel), is_turning or lane_change)
+
+    # 保存本幀 Track 物件供下一幀判斷 trackId replacement；只在 leadOne 路徑更新一次。
+    _CUTIN_PREV_TRACKS.clear()
+    _CUTIN_PREV_TRACKS.update(tracks)
     rescue_candidates = [t for t in tracks.values() if t.radar_rescue_frames >= RADAR_RESCUE_CONFIRM_FRAMES]
     if ready and rescue_prob >= RADAR_RESCUE_MIN_PROB and len(rescue_candidates) > 0:
       rescue_track = min(rescue_candidates, key=lambda t: t.dRel)
@@ -642,6 +723,17 @@ def get_lead_ext(
         cache['rescue'] = False
         cache['cutin'] = True             # 與救援相同：不享有續命，條件不成立當幀撤銷
         cache['cutin_track'] = cutin_track
+        off = cutin_track.cutin_off if cutin_track.cutin_off is not None else 0.0
+        vy = cutin_track.cutin_vy
+        t_enter = ((abs(off) - CUTIN_CORRIDOR) / max(abs(vy), 1e-3)) if abs(off) > CUTIN_CORRIDOR else 0.0
+        if cutin_prev is not cutin_track:
+          cloudlog.debug(
+            f"[RadarD_CutinSelect_DP] id={cutin_track.identifier} d={cutin_track.dRel:.1f} "
+            f"y={cutin_track.yRel:.2f} off={off:.2f} vy={vy:.2f} tEnter={t_enter:.2f}s "
+            f"vRel={cutin_track.vRel:.2f} vLead={cutin_track.vLead:.2f} "
+            f"aLeadK={cutin_track.aLeadK:.2f} aLeadTau={float(cutin_track.aLeadTau.x):.2f} "
+            f"frames={cutin_track.cutin_frames} age={cutin_track.cutin_measured_age} oldLeadD={cur_d:.1f}"
+          )
       else:
         cutin_track.cutin_active = False
     for t in tracks.values():
