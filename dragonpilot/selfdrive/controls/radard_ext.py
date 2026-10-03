@@ -144,6 +144,7 @@ GATE_PATH_JUMP_LIMIT = 1.0          # m
 LANE_GATE_DV_PCT = 0.25
 
 # dp(第九版 / 9.1 穩定性補強): 雷達橫向速度切入預測（cut-in prediction）
+# v9.3：大型車壓線誤觸發防護（同車一致性、停滯釋放），見 CUTIN_GROUP_* 說明。
 # v9.2（含 GPT v9.1：量測新鮮度、跨 ID 繼承、切入診斷訊息）：啟用車速下限 36 → 20 km/h
 # （36 km/h 以下確認幀數 6）；radard.py 的換道判斷不再包含方向燈。
 # 背景（log 032/033，約 105 km/h）：藍色小車從右車道切入，雷達 57.5s 已看到它壓線、以約
@@ -174,9 +175,39 @@ CUTIN_CONFIRM_FRAMES_LOW = 6
 
 def _cutin_confirm_frames(v_ego: float) -> int:
   return CUTIN_CONFIRM_FRAMES_LOW if v_ego < CUTIN_LOW_SPEED else CUTIN_CONFIRM_FRAMES
+
+
+def _cutin_group_consistent(cand, tracks) -> bool:
+  # dp(v9.3): 同車其他反射點也必須朝本車路徑移動；沒有同車點時視為一致
+  sibs = [o for o in tracks.values()
+          if o is not cand and o.cutin_off is not None and
+          abs(o.dRel - cand.dRel) < CUTIN_GROUP_DD and abs(o.yRel - cand.yRel) < CUTIN_GROUP_DY and
+          abs(o.vRel - cand.vRel) < CUTIN_GROUP_DV]
+  if len(sibs) == 0:
+    return True
+  direction = -1.0 if cand.cutin_off > 0 else 1.0     # 朝路徑移動的方向
+  toward = sorted(o.cutin_vy * direction for o in sibs)
+  med = toward[len(toward) // 2]
+  return med >= max(CUTIN_GROUP_VY_MIN, CUTIN_GROUP_VY_RATIO * abs(cand.cutin_vy))
 CUTIN_HOLD_OFF = 2.5                # 已採用後，偏移 < 此值且未遠離就維持
 CUTIN_ALPHA = 0.3                   # alpha-beta 濾波：位置增益
 CUTIN_BETA = 0.05                   # alpha-beta 濾波：速度增益
+
+# dp(v9.3): 大型車（聯結車、貨櫃車）壓線誤觸發防護
+# 背景：大型車有多個雷達反射點，最強反射點會沿著車身「滑動」（接近時從車尾角落滑到側面），
+# 單一點看起來像以 1~2 m/s 往本車道移動；同一台車的其他反射點卻沒有橫向移動。
+# log 032/033 109.5s 聯結車：R13510 濾波橫向速度 1.8 m/s，同車 R13604/R13618 只有 −0.4~+0.1 m/s；
+# 藍車真切入時兩個反射點（13304/13413）同時以 0.8~1.3 m/s 移動。
+# (1) 同車一致性：新候選若有「同車其他反射點」，這些點也必須朝本車路徑移動（中位數 ≥ 候選的
+#     CUTIN_GROUP_VY_RATIO 倍且 ≥ CUTIN_GROUP_VY_MIN），否則不採用。沒有同車點（一般小車單點）不受影響。
+# (2) 停滯釋放：採用後若 CUTIN_PENDING_MAX_FRAMES 幀內仍未進入 ±CUTIN_CORRIDOR 走廊（壓線不進來），
+#     就釋放，避免跟著一台壓線行駛的大車一直煞車。log 中真切入在採用後 1.1~1.5 秒進入走廊。
+CUTIN_GROUP_DD = 15.0               # 同車反射點：縱向距離差上限 m（涵蓋聯結車車身長度）
+CUTIN_GROUP_DY = 1.5                # 同車反射點：橫向距離差上限 m
+CUTIN_GROUP_DV = 1.0                # 同車反射點：相對速度差上限 m/s
+CUTIN_GROUP_VY_RATIO = 0.4
+CUTIN_GROUP_VY_MIN = 0.15           # m/s
+CUTIN_PENDING_MAX_FRAMES = 50       # 2.5 秒（CUTIN_T_ENTER 1.5 秒 + 1 秒餘裕）
 
 # dp(9.1): 切入雷達量測 freshness。允許 Toyota 雷達短暫 2 幀（約 0.1s）非實測/外推，
 # 超過後不再累積或維持 cut-in，避免長時間外推點單靠橫向估計成為切入前車。
@@ -249,6 +280,8 @@ class TrackDP(Track):
     self.cutin_vy = 0.0                        # dp(第九版): 濾波後橫向速度（m/s，左正）
     self.cutin_frames = 0                      # dp(第九版): 連續符合切入預測的幀數
     self.cutin_active = False                  # dp(第九版): 已被採用為切入前車
+    self.cutin_active_frames = 0               # dp(v9.3): 採用後經過的幀數
+    self.cutin_entered = False                 # dp(v9.3): 採用後是否已進入 ±CUTIN_CORRIDOR 走廊
     self.cutin_measured_age = 0                # dp(9.1): 距離最近一次真實雷達量測的幀數
     self.cutin_diag_armed = False              # dp(9.1): 防止候選成立診斷重複洗 log
 
@@ -333,8 +366,13 @@ class TrackDP(Track):
     if self.cutin_active:
       # 已採用：偏移仍在 CUTIN_HOLD_OFF 內、沒有明顯遠離路徑就維持（進入走廊後也維持）
       moving_away = (off * vy > 0.0) and abs(vy) > CUTIN_VY_MIN and abs(off) > CUTIN_CORRIDOR
-      if not (base_ok and abs(off) < CUTIN_HOLD_OFF and not moving_away):
-        reason = 'stale' if not fresh else ('gated' if gated else ('moving_away' if moving_away else 'base_condition'))
+      # dp(v9.3): 停滯釋放——採用後 CUTIN_PENDING_MAX_FRAMES 幀內仍未進入走廊就釋放
+      self.cutin_active_frames += 1
+      if abs(off) <= CUTIN_CORRIDOR:
+        self.cutin_entered = True
+      stalled = (not self.cutin_entered) and self.cutin_active_frames > CUTIN_PENDING_MAX_FRAMES
+      if stalled or not (base_ok and abs(off) < CUTIN_HOLD_OFF and not moving_away):
+        reason = 'stalled' if stalled else ('stale' if not fresh else ('gated' if gated else ('moving_away' if moving_away else 'base_condition')))
         cloudlog.debug(
           f"[RadarD_CutinRelease_DP] id={self.identifier} reason={reason} "
           f"d={self.dRel:.1f} off={off:.2f} vy={vy:.2f} vRel={self.vRel:.2f} "
@@ -343,8 +381,12 @@ class TrackDP(Track):
         self.cutin_active = False
         self.cutin_frames = 0
         self.cutin_diag_armed = False
+        self.cutin_active_frames = 0
+        self.cutin_entered = False
       return
 
+    self.cutin_active_frames = 0               # dp(v9.3): 未採用狀態下歸零
+    self.cutin_entered = False
     hit = (base_ok and CUTIN_CORRIDOR < abs(off) < CUTIN_OFF_MAX and toward and
            CUTIN_VY_MIN < abs(vy) < CUTIN_VY_MAX and
            (abs(off) - CUTIN_CORRIDOR) / abs(vy) < CUTIN_T_ENTER)
@@ -703,7 +745,8 @@ def get_lead_ext(
   cutin_prev = cache['cutin_track']
   cache['cutin_track'] = None
   if lead_idx == 0 and ready:
-    cutin_cands = [t for t in tracks.values() if t.cutin_active or t.cutin_frames >= _cutin_confirm_frames(v_ego)]
+    cutin_cands = [t for t in tracks.values() if t.cutin_active or
+                   (t.cutin_frames >= _cutin_confirm_frames(v_ego) and _cutin_group_consistent(t, tracks))]
     if len(cutin_cands) > 0:
       cutin_track = min(cutin_cands, key=lambda t: t.dRel)
       # 同一台車的多個反射點都成為候選時，沿用上一幀的前車點，避免在反射點之間互換
