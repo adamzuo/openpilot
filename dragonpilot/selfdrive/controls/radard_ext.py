@@ -144,6 +144,8 @@ GATE_PATH_JUMP_LIMIT = 1.0          # m
 LANE_GATE_DV_PCT = 0.25
 
 # dp(第九版 / 9.1 穩定性補強): 雷達橫向速度切入預測（cut-in prediction）
+# v9.2（含 GPT v9.1：量測新鮮度、跨 ID 繼承、切入診斷訊息）：啟用車速下限 36 → 20 km/h
+# （36 km/h 以下確認幀數 6）；radard.py 的換道判斷不再包含方向燈。
 # 背景（log 032/033，約 105 km/h）：藍色小車從右車道切入，雷達 57.5s 已看到它壓線、以約
 # 1 m/s 橫向速度切入，但模型 leadsV3[0] 仍指向 57m 外的遠車（prob 1.0），換 lead 時距離又
 # 嚴重高估，原廠配對與 fuzzy 都判定失敗，直到 59.4s 才鎖到藍車，駕駛 57.89s 已踩煞車。
@@ -151,7 +153,7 @@ LANE_GATE_DV_PCT = 0.25
 # 做法：對每個雷達目標以 alpha-beta 濾波估計「相對本車路徑的橫向偏移 off 與橫向速度 vy」，
 # 預測即將進入走廊、且縱向正在接近時，連續成立 CUTIN_CONFIRM_FRAMES 幀即成為切入候選；
 # 與救援共用仲裁：沒有前車、或比現有前車更近（且不是同一物體）才採用。不依賴視覺機率。
-CUTIN_MIN_V_EGO = 10.0              # m/s（36 km/h）以下不啟用，低速交給原廠低速覆寫
+CUTIN_MIN_V_EGO = 20.0 / 3.6        # m/s（v9.2：20 km/h 以下不啟用，原為 36 km/h）
 CUTIN_MIN_DIST = 3.0                # m
 CUTIN_MAX_DIST_BP = [10.0, 30.0]    # 本車速 m/s
 CUTIN_MAX_DIST_V = [20.0, 50.0]     # 偵測距離上限 m（約 1.6~2 秒車距）
@@ -165,6 +167,13 @@ CUTIN_T_ENTER = 1.5                 # 預測在此秒數內進入走廊
 CUTIN_CLOSING_VREL = -0.5           # 縱向接近（vRel < 此值）……
 CUTIN_CLOSE_HEADWAY = 1.0           # ……或距離 < 本車速 × 此秒數（近距離同速切入）
 CUTIN_CONFIRM_FRAMES = 4            # 連續成立幀數（0.2 秒）
+# v9.2: 低速區間（20~36 km/h）機車多、雷達反射點小且橫向跳動大，確認幀數提高為 6 幀（0.3 秒）
+CUTIN_LOW_SPEED = 36.0 / 3.6        # m/s
+CUTIN_CONFIRM_FRAMES_LOW = 6
+
+
+def _cutin_confirm_frames(v_ego: float) -> int:
+  return CUTIN_CONFIRM_FRAMES_LOW if v_ego < CUTIN_LOW_SPEED else CUTIN_CONFIRM_FRAMES
 CUTIN_HOLD_OFF = 2.5                # 已採用後，偏移 < 此值且未遠離就維持
 CUTIN_ALPHA = 0.3                   # alpha-beta 濾波：位置增益
 CUTIN_BETA = 0.05                   # alpha-beta 濾波：速度增益
@@ -341,7 +350,7 @@ class TrackDP(Track):
            (abs(off) - CUTIN_CORRIDOR) / abs(vy) < CUTIN_T_ENTER)
     self.cutin_frames = self.cutin_frames + 1 if hit else 0
 
-    if self.cutin_frames >= CUTIN_CONFIRM_FRAMES and not self.cutin_diag_armed:
+    if self.cutin_frames >= _cutin_confirm_frames(v_ego) and not self.cutin_diag_armed:
       t_enter = (abs(off) - CUTIN_CORRIDOR) / max(abs(vy), 1e-3)
       cloudlog.debug(
         f"[RadarD_CutinArmed_DP] id={self.identifier} d={self.dRel:.1f} y={self.yRel:.2f} "
@@ -469,7 +478,7 @@ def get_lead_ext(
   steering_angle_deg：雷達主導救援的方向盤角度開關。
   raw_lead_prob：未濾波的原始 lead 機率，雷達主導救援的視覺信心度下限只看這個值；
   未提供時（例如測試）退回使用濾波後的 lead_prob。
-  lane_change：本車正在變換車道（模型 laneChangeState 非 off，或方向燈亮），切入預測暫停。
+  lane_change：本車正在變換車道（模型 laneChangeState 非 off），切入預測暫停（v9.2 起不看方向燈）。
   path_x/path_y：modelV2.position，供橫向閘門、鎖定黏著、雷達主導救援與切入預測的走廊判斷。
   radard.py 一律以關鍵字參數傳入上述擴充參數，避免位置參數錯位。
   """
@@ -694,7 +703,7 @@ def get_lead_ext(
   cutin_prev = cache['cutin_track']
   cache['cutin_track'] = None
   if lead_idx == 0 and ready:
-    cutin_cands = [t for t in tracks.values() if t.cutin_active or t.cutin_frames >= CUTIN_CONFIRM_FRAMES]
+    cutin_cands = [t for t in tracks.values() if t.cutin_active or t.cutin_frames >= _cutin_confirm_frames(v_ego)]
     if len(cutin_cands) > 0:
       cutin_track = min(cutin_cands, key=lambda t: t.dRel)
       # 同一台車的多個反射點都成為候選時，沿用上一幀的前車點，避免在反射點之間互換
