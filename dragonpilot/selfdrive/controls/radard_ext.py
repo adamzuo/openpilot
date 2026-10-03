@@ -144,8 +144,8 @@ GATE_PATH_JUMP_LIMIT = 1.0          # m
 LANE_GATE_DV_PCT = 0.25
 
 # dp(第九版 / 9.1 穩定性補強): 雷達橫向速度切入預測（cut-in prediction）
-# v9.3：大型車壓線誤觸發防護（同車一致性、停滯釋放），見 CUTIN_GROUP_* 說明。
-# v9.2（含 GPT v9.1：量測新鮮度、跨 ID 繼承、切入診斷訊息）：啟用車速下限 36 → 20 km/h
+# v9.3（無切入跨 ID 繼承版）：保留多點一致性、停滯釋放與切入偵測；新 ID 重新確認。
+# v9.2：啟用車速下限 36 → 20 km/h；量測新鮮度與切入診斷保留，跨 ID 繼承已移除
 # （36 km/h 以下確認幀數 6）；radard.py 的換道判斷不再包含方向燈。
 # 背景（log 032/033，約 105 km/h）：藍色小車從右車道切入，雷達 57.5s 已看到它壓線、以約
 # 1 m/s 橫向速度切入，但模型 leadsV3[0] 仍指向 57m 外的遠車（prob 1.0），換 lead 時距離又
@@ -231,10 +231,6 @@ def _is_same_object(a, b) -> bool:
 
 
 _LOW_SPEED_LAST = {'track': None}   # dp: 上一幀低速覆寫選到的雷達目標（重複點閃爍修正用）
-
-# dp(9.1): 保存上一幀 leadOne 看到的 Track 物件。當 Toyota 雷達把同一實體車換成新 trackId 時，
-# 用於把 cut-in alpha-beta 狀態移交給新 Track，避免 vy 歸零、4 幀確認重新開始。
-_CUTIN_PREV_TRACKS = {}
 
 # 全域快取：改回 Candy 版邏輯，直接快取 Track 物件本身
 # dp: 額外加上 last_aLeadK，用來在「凍結中」跟「剛恢復匹配」兩種情況下，
@@ -576,47 +572,14 @@ def get_lead_ext(
         active_rescue = heir
       else:
         active_rescue = None
-    # dp(9.1): cut-in 狀態跨 trackId 繼承。只處理上一幀已消失、且確實已有 cut-in 濾波/確認
-    # 狀態的 Track；新 Track 必須符合既有 _is_same_object() 的 d/y/v 三重限制。
-    # 若新 Track 自己已有更成熟的 cut-in 狀態則不覆寫。
-    prev_tracks = list(_CUTIN_PREV_TRACKS.values())
-    for old in prev_tracks:
-      if tracks.get(old.identifier) is old:
-        continue
-      meaningful = (old.cutin_off is not None and
-                    (old.cutin_frames > 0 or old.cutin_active or abs(old.cutin_vy) >= 0.5 * CUTIN_VY_MIN))
-      if not meaningful:
-        continue
-      heirs = [t for t in tracks.values() if _is_same_object(old, t)]
-      if len(heirs) == 0:
-        continue
-      heir = min(heirs, key=lambda t: abs(t.dRel - old.dRel) + abs(t.yRel - old.yRel) + 0.5 * abs(t.vRel - old.vRel))
-      if old.cutin_active or old.cutin_frames > heir.cutin_frames:
-        old_id = old.identifier
-        heir.cutin_off = old.cutin_off
-        heir.cutin_vy = old.cutin_vy
-        heir.cutin_frames = max(heir.cutin_frames, old.cutin_frames)
-        heir.cutin_active = heir.cutin_active or old.cutin_active
-        heir.cutin_measured_age = 0 if bool(heir.measured) else min(old.cutin_measured_age + 1, CUTIN_MEASURED_MAX_AGE + 1)
-        heir.cutin_diag_armed = old.cutin_diag_armed
-        cloudlog.debug(
-          f"[RadarD_CutinInherit_DP] {old_id}->{heir.identifier} d={heir.dRel:.1f} y={heir.yRel:.2f} "
-          f"off={heir.cutin_off:.2f} vy={heir.cutin_vy:.2f} frames={heir.cutin_frames} "
-          f"active={int(heir.cutin_active)} age={heir.cutin_measured_age}"
-        )
-        if cache0.get('cutin_track') is old:
-          cache0['cutin_track'] = heir
-        if cache0.get('track') is old and cache0.get('cutin'):
-          cache0['track'] = heir
+    # v9.3（停用切入跨 ID 繼承）：新 Track 使用建構時的初始切入狀態，
+    # 重新估算橫向速度與累積確認幀數，避免大車反射點交換 ID 時接續錯誤狀態。
 
     for track in tracks.values():
       track.update_radar_rescue(v_ego, use_model_path, _path_y_at(track.dRel), steering_angle_deg,
                                 is_active=track is active_rescue)
       track.update_cutin(v_ego, use_model_path, _path_y_at(track.dRel), is_turning or lane_change)
 
-    # 保存本幀 Track 物件供下一幀判斷 trackId replacement；只在 leadOne 路徑更新一次。
-    _CUTIN_PREV_TRACKS.clear()
-    _CUTIN_PREV_TRACKS.update(tracks)
     rescue_candidates = [t for t in tracks.values() if t.radar_rescue_frames >= RADAR_RESCUE_CONFIRM_FRAMES]
     if ready and rescue_prob >= RADAR_RESCUE_MIN_PROB and len(rescue_candidates) > 0:
       rescue_track = min(rescue_candidates, key=lambda t: t.dRel)
