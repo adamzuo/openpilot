@@ -290,7 +290,7 @@ class Tici(HardwareBase):
 
   def get_screen_brightness(self):
     # 必須與 set_screen_brightness 使用相同的縮放比例，以確保 UI 顯示一致
-    BRIGHTNESS_SCALE = 1.0 if self.get_device_type() == "mici" else 0.4
+    BRIGHTNESS_SCALE = 1.0 if self.get_device_type() == "mici" else 0.3
 
     try:
       # 讀取螢幕硬體支援的最大亮度數值
