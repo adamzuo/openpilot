@@ -217,9 +217,10 @@ class RadarD:
     #   >=10 deg/s 佔 4~14% 幀（市區閃機車、路面修正就會觸發），>=20 deg/s 佔 1~6%。
     is_turning = abs(sm['carState'].steeringAngleDeg) >= 15.0 or abs(sm['carState'].steeringRateDeg) >= 20.0
     steering_angle_deg = sm['carState'].steeringAngleDeg
-    # dp(第九版): 本車正在變換車道（模型換道狀態非 off，或方向燈亮）時，暫停雷達切入預測
-    lane_change = (sm['modelV2'].meta.laneChangeState != log.LaneChangeState.off or
-                   sm['carState'].leftBlinker or sm['carState'].rightBlinker)
+    # dp(v9.2): 本車正在變換車道（模型換道狀態非 off）時，暫停雷達切入預測。
+    # v9.2 起不再看方向燈：方向燈亮但尚未換道時本車路徑不會移動，不會產生假的切入；
+    # 而且警示燈（左右方向燈同時亮）在國道壅塞時很常見，原本會讓切入預測整個停用。
+    lane_change = sm['modelV2'].meta.laneChangeState != log.LaneChangeState.off
 
     ar_pts = {pt.trackId: [pt.dRel, pt.yRel, pt.vRel, pt.measured] for pt in rr.points}
 
