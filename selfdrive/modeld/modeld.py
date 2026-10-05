@@ -26,6 +26,7 @@ from openpilot.common.file_chunker import read_file_chunked, get_manifest_path
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.modeld.helpers import usbgpu_present, modeld_pkl_path, get_tg_input_devices
 from dragonpilot.selfdrive.controls.lib.road_edge_detector import RoadEdgeDetector
+from dragonpilot import jetlink_adapter
 
 LITE = os.getenv("LITE") is not None
 
@@ -93,6 +94,7 @@ class ModelState:
     self.policy_input_shapes =  policy_metadata['input_shapes']
     self.policy_output_slices = policy_metadata['output_slices']
 
+    self.lat_delay = 0.0
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
 
     self.frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
@@ -109,7 +111,7 @@ class ModelState:
     return parsed_model_outputs
 
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
-                inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
+                inputs: dict[str, np.ndarray], after_enqueue=None, *, prepare_only: bool = False) -> dict[str, np.ndarray] | None:
     for key in bufs.keys():
       ptr = np.frombuffer(bufs[key].data, dtype=np.uint8).ctypes.data
       yuv_size = self.frame_buf_params[key][3]
@@ -136,6 +138,9 @@ class ModelState:
       **{k: self.input_queues[k] for k in POLICY_INPUTS}, img=img, big_img=big_img
     )
 
+    if after_enqueue is not None:
+      after_enqueue()
+
     vision_output = vision_output.numpy().flatten()
     policy_output = policy_output.numpy().flatten()
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(vision_output, self.vision_output_slices))
@@ -158,6 +163,7 @@ def main(demo=False):
   params.put_bool("UsbGpuCompiled", _compiled)
 
   if not USBGPU:
+    jetlink_adapter.prepare()
     # USB GPU currently saturates a core so can't do this yet,
     # also need to move the aux USB interrupts for good timings
     config_realtime_process(7, 54)
@@ -187,7 +193,17 @@ def main(demo=False):
 
   st = time.monotonic()
   cloudlog.warning("loading model")
-  model = ModelState(vipc_client_main.width, vipc_client_main.height, USBGPU)
+  small_model = ModelState(vipc_client_main.width, vipc_client_main.height, USBGPU)
+  model = small_model
+  last_jetlink_state = None
+  last_vision_source = None
+  last_vision_reason = None
+  from dragonpilot.jetlink_adapter.leads import apply_phone_leads
+  from dragonpilot.jetlink_adapter.priority import LeadPriorityGuard
+  vision_priority_guard = LeadPriorityGuard()
+  from jetlink.vision import boot_seconds
+  if not USBGPU and (joined := jetlink_adapter.attach(small_model, vipc_client_main.width, vipc_client_main.height)) is not None:
+    model = joined
   cloudlog.warning(f"models loaded in {time.monotonic() - st:.1f}s, modeld starting")
 
   # messaging
@@ -270,6 +286,7 @@ def main(demo=False):
     frame_id = sm["roadCameraState"].frameId
     v_ego = max(sm["carState"].vEgo, 0.)
     lat_delay = sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+    model.lat_delay = lat_delay
     if sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["liveCalibration"].rpyCalib, dtype=np.float32)
       dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['roadCameraState'].sensor))]
@@ -299,13 +316,37 @@ def main(demo=False):
 
     bufs = {name: buf_extra if 'big' in name else buf_main for name in model.vision_input_names}
     transforms = {name: model_transform_extra if 'big' in name else model_transform_main for name in model.vision_input_names}
+    capture_boot_s = min(meta_main.timestamp_sof, meta_extra.timestamp_sof) / 1e9
+    sensor_boot_s = sm.logMonoTime['carState'] / 1e9
+    vehicle_context_valid = (live_calib_seen and sm.seen['carState'] and sm.valid['carState'] and
+                             sm.alive['carState'] and 0 <= boot_seconds() - sensor_boot_s <= .25)
+    ego_accel = sm['carState'].aEgo
+    capture_ego_speed = v_ego + ego_accel * (capture_boot_s - sensor_boot_s)
     inputs:dict[str, np.ndarray] = {
+      'jetlink_context': np.array([capture_boot_s, capture_ego_speed, ego_accel, sm['carState'].yawRate,
+                                    float(vehicle_context_valid)], dtype=np.float64),
       'desire_pulse': vec_desire,
       'traffic_convention': traffic_convention,
+      'action_t': np.array([lat_delay + DT_MDL * 1.5, long_delay + DT_MDL * 1.5], dtype=np.float32),
     }
 
     mt1 = time.perf_counter()
-    model_output = model.run(bufs, transforms, inputs, prepare_only)
+    model.frame_drop_ratio = frame_drop_ratio
+    handovers = getattr(model, 'handovers', 0)
+    if prepare_only:
+      # Keep local queues moving, without passing a bool as a Jetlink callback.
+      small_model.run(bufs, transforms, inputs, prepare_only=True)
+      model_output = None
+    else:
+      model_output = model.run(bufs, transforms, inputs)
+    if getattr(model, 'handovers', 0) != handovers:
+      run_count = 0
+      frame_drop_ratio = 0.
+      frame_dropped_filter.x = 0.
+    jetlink_state = getattr(model, 'big_model_state', 'none')
+    if jetlink_state != last_jetlink_state:
+      params.put("JetlinkModelState", jetlink_state)
+      last_jetlink_state = jetlink_state
     mt2 = time.perf_counter()
     model_execution_time = mt2 - mt1
 
@@ -322,6 +363,16 @@ def main(demo=False):
       fill_model_msg(drivingdata_send, modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
                      frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, live_calib_seen)
+
+      vision_use = apply_phone_leads(modelv2_send.modelV2, getattr(model, 'vision_snapshot', None),
+                                      ego_speed=v_ego, yaw_rate=sm['carState'].yawRate,
+                                      context_valid=vehicle_context_valid, priority_guard=vision_priority_guard)
+      if vision_use['source'] != last_vision_source or vision_use['reason'] != last_vision_reason:
+        cloudlog.event('jetlinkLeadSource', **vision_use)
+        import json
+        params.put('JetlinkVisionUse', json.dumps(vision_use))
+        last_vision_source = vision_use['source']
+        last_vision_reason = vision_use['reason']
 
       desire_state = modelv2_send.modelV2.meta.desireState
       l_lane_change_prob = desire_state[log.Desire.laneChangeLeft]

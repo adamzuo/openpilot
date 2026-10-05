@@ -988,6 +988,23 @@ struct ModelDataV2 {
   roadEdges @10 :List(XYZTData);
   roadEdgeStds @14 :List(Float32);
 
+  # dptest: provenance of the lead-only phone override, atomic with this frame.
+  jetlinkVision @27 :JetlinkVision;
+
+  struct JetlinkVision {
+    source @0 :Source;
+    frameId @1 :UInt32;
+    ageSeconds @2 :Float32;
+    targetHz @3 :UInt16;
+    reason @4 :Text;
+    maxAgeSeconds @5 :Float32;
+    guardActive @6 :Bool;
+    enum Source {
+      local @0;
+      phone @1;
+    }
+  }
+
   # predicted lead cars
   leads @11 :List(LeadDataV2);
   leadsV3 @18 :List(LeadDataV3);

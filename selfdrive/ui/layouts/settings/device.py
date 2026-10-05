@@ -5,6 +5,7 @@ import json
 from cereal import messaging, log
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
+from dragonpilot.jetlink_adapter import panel as jetlink_panel
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.onroad.driver_camera_dialog import DriverCameraDialog
 from openpilot.selfdrive.ui.ui_state import ui_state
@@ -63,7 +64,13 @@ class DeviceLayout(Widget):
     self._dp_on_off_road_btn = button_item(lambda: tr("On/Off Road"), lambda: tr("Go Offroad"), lambda: tr("Force openpilot to go into onroad/offroad state.<br>(e.g. for update purpose)"),
                                         callback=self._dp_on_off_road_prompt)
 
+    self._jetlink_mode_dialog = None
     items = [
+      button_item("Jetlink 連線 / Connection", lambda: jetlink_panel.MODE_LABELS[jetlink_panel.mode_index(self._params)],
+                  "USB 用於 Android、Mac、Jetson、Linux；iOS 用於 iPhone、iPad。"
+                  "開啟後 USB ADB 會停用；外部模型尚未就緒或斷線時使用本機模型。",
+                  callback=self._select_jetlink_mode, enabled=ui_state.is_offroad),
+      text_item("Jetlink 狀態 / Status", lambda: jetlink_panel.status_text(self._params)),
       self._dp_vehicle_selector_btn,
       self._dp_on_off_road_btn,
       text_item(lambda: tr("Dongle ID"), self._params.get("DongleId") or (lambda: tr("N/A"))),
@@ -79,6 +86,21 @@ class DeviceLayout(Widget):
       self._power_off_btn,
     ]
     return items
+
+  def _select_jetlink_mode(self):
+    if not ui_state.is_offroad():
+      return
+
+    def selected(result: DialogResult):
+      dialog = self._jetlink_mode_dialog
+      if result == DialogResult.CONFIRM and dialog is not None and ui_state.is_offroad():
+        jetlink_panel.set_mode(self._params, jetlink_panel.MODE_LABELS.index(dialog.selection))
+      self._jetlink_mode_dialog = None
+
+    self._jetlink_mode_dialog = MultiOptionDialog(
+      "Jetlink 連線 / Connection", list(jetlink_panel.MODE_LABELS),
+      jetlink_panel.MODE_LABELS[jetlink_panel.mode_index(self._params)], callback=selected)
+    gui_app.push_widget(self._jetlink_mode_dialog)
 
   def _offroad_transition(self):
     self._power_off_btn.action_item.right_button.set_visible(ui_state.is_offroad())

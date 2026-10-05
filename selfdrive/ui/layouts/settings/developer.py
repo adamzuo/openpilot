@@ -1,4 +1,5 @@
 from openpilot.common.params import Params
+from dragonpilot.jetlink_adapter.panel import adb_blocked
 from openpilot.selfdrive.ui.widgets.ssh_key import ssh_key_item
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
@@ -46,7 +47,7 @@ class DeveloperLayout(Widget):
       description=lambda: tr(DESCRIPTIONS["enable_adb"]),
       initial_state=self._params.get_bool("AdbEnabled"),
       callback=self._on_enable_adb,
-      enabled=ui_state.is_offroad,
+      enabled=lambda: ui_state.is_offroad() and not adb_blocked(self._params),
     )
 
     # SSH enable toggle + SSH key management
@@ -162,6 +163,9 @@ class DeveloperLayout(Widget):
     gui_app.set_show_fps(state)
 
   def _on_enable_adb(self, state: bool):
+    if state and adb_blocked(self._params):
+      self._adb_toggle.action_item.set_state(False)
+      return
     self._params.put_bool("AdbEnabled", state, block=True)
 
   def _on_enable_ssh(self, state: bool):

@@ -9,6 +9,8 @@ from collections import OrderedDict, namedtuple
 
 import psutil
 
+from dragonpilot import jetlink_adapter
+
 import cereal.messaging as messaging
 from cereal import log
 from cereal.services import SERVICE_LIST
@@ -190,6 +192,7 @@ def hardware_thread(end_event, hw_queue) -> None:
 
   params = Params()
   power_monitor = PowerMonitoring()
+  accelerator_off_ts = None
 
   uptime_offroad: float = params.get("UptimeOffroad", return_default=True)
   uptime_onroad: float = params.get("UptimeOnroad", return_default=True)
@@ -316,6 +319,9 @@ def hardware_thread(end_event, hw_queue) -> None:
     if show_alert:
       msg.deviceState.fanSpeedPercentDesired = 100
 
+    accelerator_error = jetlink_adapter.reason()
+    set_offroad_alert_if_changed("Offroad_AcceleratorUnavailable", accelerator_error is not None, extra_text=accelerator_error)
+
     # *** registration check ***
     # if not PC:
       # we enforce this for our software, but you are welcome
@@ -386,7 +392,11 @@ def hardware_thread(end_event, hw_queue) -> None:
     # Check if we need to shut down
     if power_monitor.should_shutdown(onroad_conditions["ignition"], in_car, off_ts, started_seen):
       cloudlog.warning(f"shutting device down, offroad since {off_ts}")
-      params.put_bool("DoShutdown", True, block=True)
+      if accelerator_off_ts is None:
+        jetlink_adapter.request_shutdown(f"comma shutting down, offroad since {off_ts}")
+        accelerator_off_ts = time.monotonic()
+      if not jetlink_adapter.shutdown_pending() or time.monotonic() - accelerator_off_ts >= 25.0:
+        params.put_bool("DoShutdown", True, block=True)
 
     msg.deviceState.started = started_ts is not None
     msg.deviceState.startedMonoTime = int(1e9*(started_ts or 0))

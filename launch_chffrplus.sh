@@ -174,6 +174,8 @@ function launch {
 
   ln -sfn $(pwd) /data/pythonpath
   export PYTHONPATH="$PWD"
+  # Comma-side Jetlink runtime vendored with this port.
+  ln -sfn jetlink_repo/jetlink jetlink
 
   if [ -f /AGNOS ]; then
     set_tici_hw

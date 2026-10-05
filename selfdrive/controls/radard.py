@@ -198,6 +198,10 @@ class RadarD:
     self.radar_state_valid = False
 
     self.ready = False
+    self._lead_source = "local"
+
+  def on_vision_source_change(self):
+    """Fork-specific radar caches may clear state learned from the previous vision source."""
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
@@ -244,11 +248,20 @@ class RadarD:
     else:
       model_v_ego = self.v_ego
     leads_v3 = sm['modelV2'].leadsV3
+    lead_source = str(sm['modelV2'].jetlinkVision.source)
+    if lead_source == 'phone':
+      # Phone lead.v is absolute and has been advanced to this frame.
+      # Do not subtract another model's predicted ego speed.
+      model_v_ego = self.v_ego
+    source_changed = lead_source != self._lead_source
+    if source_changed:
+      self._lead_source = lead_source
+      self.on_vision_source_change()
     if len(leads_v3) > 1:
       for i in range(2):
         # Asymmetric filter on lead prob to keep lead when uncertain
         lead_prob = leads_v3[i].prob
-        if lead_prob > self.lead_prob_filters[i].x:
+        if source_changed or lead_prob > self.lead_prob_filters[i].x:
           self.lead_prob_filters[i].x = lead_prob
         else:
           self.lead_prob_filters[i].update(lead_prob)

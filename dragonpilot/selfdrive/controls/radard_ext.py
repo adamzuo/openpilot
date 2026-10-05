@@ -266,5 +266,15 @@ class RadarDExt(RadarD):
   def __init__(self, delay: float = 0.0):
     super().__init__(delay)
 
+  def on_vision_source_change(self):
+    # A stale phone result must not survive a fallback through early-lock
+    # caches, probability smoothing, or track-specific vision confidence.
+    for state in _LEAD_STATE_CACHE.values():
+      state.update(track=None, absent=0, last_aLeadK=None)
+    for track in self.tracks.values():
+      track.ema_confidence = {0: 0.4, 1: 0.4}
+      track.holdover_frames = {0: 0, 1: 0}
+      track.is_out_of_lane = False
+
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     super().update(sm, rr)
