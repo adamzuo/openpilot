@@ -369,8 +369,7 @@ def main(demo=False):
                                       context_valid=vehicle_context_valid, priority_guard=vision_priority_guard)
       if vision_use['source'] != last_vision_source or vision_use['reason'] != last_vision_reason:
         cloudlog.event('jetlinkLeadSource', **vision_use)
-        import json
-        params.put('JetlinkVisionUse', json.dumps(vision_use))
+        params.put('JetlinkVisionUse', vision_use)
         last_vision_source = vision_use['source']
         last_vision_reason = vision_use['reason']
 

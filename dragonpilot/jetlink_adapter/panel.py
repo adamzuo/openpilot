@@ -36,13 +36,16 @@ def status_text(params) -> str:
     return "Jetlink 未啟用（USB GPU 已占用連線）"
   state = params.get("JetlinkModelState")
   if state == 'vision':
-    import json
     from jetlink.vision import fresh_snapshot
     try:
-      snapshot = json.loads(params.get("JetlinkVision") or '{}')
+      snapshot = params.get("JetlinkVision") or {}
+      if not isinstance(snapshot, dict):
+        raise TypeError("JetlinkVision must be a JSON object")
       hz = snapshot.get('target_hz', '?')
       if fresh_snapshot(snapshot):
-        usage = json.loads(params.get("JetlinkVisionUse") or '{}')
+        usage = params.get("JetlinkVisionUse") or {}
+        if not isinstance(usage, dict):
+          raise TypeError("JetlinkVisionUse must be a JSON object")
         if usage.get('source') == 'phone':
           return f"手機前車視覺優先 {hz} Hz；道路與轉向使用本機模型"
         reason = usage.get('reason', '')

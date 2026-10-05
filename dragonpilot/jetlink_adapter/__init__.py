@@ -101,7 +101,8 @@ class Adapter:
     """Write auxiliary data off the frame thread; coordinates stay in model space."""
     import json
     from openpilot.common.params import Params
-    Params().put("JetlinkVision", json.dumps(snapshot, allow_nan=False), block=True)
+    json.dumps(snapshot, allow_nan=False)  # validate finite values; Params serializes JSON itself
+    Params().put("JetlinkVision", snapshot, block=True)
 
   def __init__(self):
     from jetlink.openpilot.interface import Keys
