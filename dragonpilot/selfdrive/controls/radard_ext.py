@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import capnp
 import numpy as np
+from collections import deque
 from typing import Any
 from cereal import messaging, car
 
@@ -144,6 +145,7 @@ GATE_PATH_JUMP_LIMIT = 1.0          # m
 LANE_GATE_DV_PCT = 0.25
 
 # dp(第九版 / 9.1 穩定性補強): 雷達橫向速度切入預測（cut-in prediction）
+# v9.4：在 v931 基礎上加入「1 秒淨橫移」條件（CUTIN_NET_SHIFT_*），擋單一反射點大型車的橫向抖動。
 # v9.3（無切入跨 ID 繼承版）：保留多點一致性、停滯釋放與切入偵測；新 ID 重新確認。
 # v9.2：啟用車速下限 36 → 20 km/h；量測新鮮度與切入診斷保留，跨 ID 繼承已移除
 # （36 km/h 以下確認幀數 6）；radard.py 的換道判斷不再包含方向燈。
@@ -177,6 +179,30 @@ def _cutin_confirm_frames(v_ego: float) -> int:
   return CUTIN_CONFIRM_FRAMES_LOW if v_ego < CUTIN_LOW_SPEED else CUTIN_CONFIRM_FRAMES
 
 
+def _cutin_net_shift_ok(cand) -> bool:
+  # dp(v9.4): 過去 1 秒（未濾波偏移）往本車路徑的淨位移 >= CUTIN_NET_SHIFT_MIN
+  # 追蹤不滿 1 秒的新雷達點（例如超車後立刻切入）：至少要有 CUTIN_NET_SHIFT_MIN_FRAMES 幀，
+  # 淨位移同樣要 >= CUTIN_NET_SHIFT_MIN，且過程中不能有超過 CUTIN_NET_SHIFT_REVERSAL 的往外回彈
+  # （抖動的特徵是一下往內一下往外）。
+  h = cand.cutin_raw_hist
+  n = len(h)
+  if n < CUTIN_NET_SHIFT_MIN_FRAMES + 1:
+    return False
+  now = h[-1]
+  direction = -1.0 if now > 0 else 1.0       # 往路徑（偏移絕對值變小）的方向
+  if (now - h[0]) * direction < CUTIN_NET_SHIFT_MIN:
+    return False
+  if n >= CUTIN_NET_SHIFT_FRAMES + 1:
+    return True
+  best = h[0] * direction
+  for x in list(h)[1:]:
+    p = x * direction
+    if best - p > CUTIN_NET_SHIFT_REVERSAL:
+      return False
+    best = max(best, p)
+  return True
+
+
 def _cutin_group_consistent(cand, tracks) -> bool:
   # dp(v9.3): 同車其他反射點也必須朝本車路徑移動；沒有同車點時視為一致
   sibs = [o for o in tracks.values()
@@ -208,6 +234,19 @@ CUTIN_GROUP_DV = 1.0                # 同車反射點：相對速度差上限 m/
 CUTIN_GROUP_VY_RATIO = 0.4
 CUTIN_GROUP_VY_MIN = 0.15           # m/s
 CUTIN_PENDING_MAX_FRAMES = 50       # 2.5 秒（CUTIN_T_ENTER 1.5 秒 + 1 秒餘裕）
+
+# dp(v9.4): 1 秒淨橫移條件——擋「單一反射點」大型車的橫向抖動
+# 背景（log 035，右車道大型廂型車 KEN-3302）：雷達只有一個反射點 R12241，橫向速度有 157 幀
+# 看起來往內（最高 2.0 m/s），是反射點在車身上跳動；同車一致性沒有其他點可比對而失效。
+# 把它往車道線平移 0.8~1.0 m 模擬壓線時，v9.2 / v931 都會誤接手 0.25~0.4 秒。
+# 真切入是一路往內移動，抖動是一下往內一下往外，1 秒淨位移接近 0：
+#   藍車 0.95 m、R14009 1.67 m；大型車抖動 −0.06 m、0.10 m。
+# 新候選必須「過去 CUTIN_NET_SHIFT_FRAMES 幀（未濾波偏移）往內淨位移 ≥ CUTIN_NET_SHIFT_MIN」。
+# 追蹤不滿 1 秒的新雷達點：至少觀察 0.5 秒，且淨位移 ≥ 0.5 m、過程中無往外回彈（見 _cutin_net_shift_ok）。
+CUTIN_NET_SHIFT_FRAMES = 20         # 1.0 秒
+CUTIN_NET_SHIFT_MIN = 0.5           # m
+CUTIN_NET_SHIFT_MIN_FRAMES = 10     # 新雷達點至少觀察 0.5 秒
+CUTIN_NET_SHIFT_REVERSAL = 0.15     # m，新雷達點觀察期間允許的往外回彈上限
 
 # dp(9.1): 切入雷達量測 freshness。允許 Toyota 雷達短暫 2 幀（約 0.1s）非實測/外推，
 # 超過後不再累積或維持 cut-in，避免長時間外推點單靠橫向估計成為切入前車。
@@ -273,6 +312,7 @@ class TrackDP(Track):
     self.closing_speed_streak = {0: 0, 1: 0}   # dp: 連續幾幀符合「正在快速接近」
     self.radar_rescue_frames = 0               # dp: 連續符合雷達主導救援條件的幀數（與 lead_idx 無關）
     self.cutin_off = None                      # dp(第九版): 濾波後相對本車路徑的橫向偏移（左正）
+    self.cutin_raw_hist = deque(maxlen=CUTIN_NET_SHIFT_FRAMES + 1)   # dp(v9.4): 未濾波偏移歷史
     self.cutin_vy = 0.0                        # dp(第九版): 濾波後橫向速度（m/s，左正）
     self.cutin_frames = 0                      # dp(第九版): 連續符合切入預測的幀數
     self.cutin_active = False                  # dp(第九版): 已被採用為切入前車
@@ -339,9 +379,11 @@ class TrackDP(Track):
       self.cutin_frames = 0
       self.cutin_active = False
       self.cutin_diag_armed = False
+      self.cutin_raw_hist.clear()                # dp(v9.4): 路徑無效時偏移基準改變，歷史一併清除
       return
 
     meas = self.yRel - path_y
+    self.cutin_raw_hist.append(meas)
     if self.cutin_off is None:
       self.cutin_off = meas
       self.cutin_vy = 0.0
@@ -709,7 +751,8 @@ def get_lead_ext(
   cache['cutin_track'] = None
   if lead_idx == 0 and ready:
     cutin_cands = [t for t in tracks.values() if t.cutin_active or
-                   (t.cutin_frames >= _cutin_confirm_frames(v_ego) and _cutin_group_consistent(t, tracks))]
+                   (t.cutin_frames >= _cutin_confirm_frames(v_ego) and _cutin_group_consistent(t, tracks) and
+                    _cutin_net_shift_ok(t))]
     if len(cutin_cands) > 0:
       cutin_track = min(cutin_cands, key=lambda t: t.dRel)
       # 同一台車的多個反射點都成為候選時，沿用上一幀的前車點，避免在反射點之間互換
