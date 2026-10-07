@@ -25,6 +25,7 @@ A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
+THROTTLE_BLOCK_CONFIRM_S = 0.3
 
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
@@ -60,6 +61,7 @@ class LongitudinalPlanner(LongitudinalPlannerDP):
     self.fcw = False
     self.dt = dt
     self.allow_throttle = True
+    self._throttle_block_elapsed = 0.0
 
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
@@ -71,8 +73,21 @@ class LongitudinalPlanner(LongitudinalPlannerDP):
     self.a_desired_trajectory = np.zeros(CONTROL_N)
     self.j_desired_trajectory = np.zeros(CONTROL_N)
     self.ocm = OCM()
-    self.aem = AEM()
+    self.aem = AEM(dt=self.dt)
     self.apm = APM()
+
+  def update_allow_throttle(self, throttle_prob, v_ego, reset_state):
+    # B: debounce only the throttle-intent restriction, shared by all modes.
+    # Low speed keeps the original immediate bypass. While disengaged, use the
+    # original decision but clear history so it cannot carry into engagement.
+    allow_raw = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
+    if reset_state or allow_raw:
+      self._throttle_block_elapsed = 0.0
+      self.allow_throttle = allow_raw
+    else:
+      self._throttle_block_elapsed = min(THROTTLE_BLOCK_CONFIRM_S,
+                                         self._throttle_block_elapsed + self.dt)
+      self.allow_throttle = self._throttle_block_elapsed + 1e-9 < THROTTLE_BLOCK_CONFIRM_S
 
   @staticmethod
   def parse_model(model_msg):
@@ -139,7 +154,7 @@ class LongitudinalPlanner(LongitudinalPlannerDP):
 
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
     _, _, _, _, throttle_prob = self.parse_model(sm['modelV2'])
-    self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
+    self.update_allow_throttle(throttle_prob, v_ego, reset_state)
 
     if not self.allow_throttle:
       clipped_accel_coast = max(accel_coast, accel_clip[0])
@@ -222,7 +237,7 @@ class LongitudinalPlanner(LongitudinalPlannerDP):
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
-    if mode != AEM_MODE_HYBRID:
+    if mode != AEM_MODE_HYBRID or reset_state:
       self.aem.reset_hybrid()  # dp: 離開 AEM 混合模式時重設遲滯狀態
 
     if mode == 'acc':
@@ -253,6 +268,11 @@ class LongitudinalPlanner(LongitudinalPlannerDP):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
+    if mode == AEM_MODE_HYBRID:
+      if reset_state:
+        self.aem.reset_hybrid()
+      else:
+        self.aem.observe_output(self.output_a_target)
 
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')
