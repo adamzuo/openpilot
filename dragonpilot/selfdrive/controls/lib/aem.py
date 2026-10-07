@@ -66,9 +66,17 @@ E2E_BRAKE_OFF = -0.05      # 解除：e2e 高於此值
 E2E_BRAKE_OFF_REL = -0.05  # 解除：或與 MPC 的差距小於 0.05
 
 
+# A: Immediate braking entry; delayed release and upward-only recovery limiting.
+E2E_MIN_HOLD_S = 1.0
+E2E_RELEASE_CONFIRM_S = 0.5
+E2E_RECOVERY_JERK = 1.0  # m/s^3; never limits a request for stronger braking
+
+
 class AEM:
-  def __init__(self):
+  def __init__(self, dt=0.05):
+    self.dt = dt
     self._throttle_prob = 1.0
+    self.reset_hybrid()
     self._e2e_brake = False  # dp: 混合模式中 e2e 是否處於「明確要煞車」狀態
     self._v_ego = 0.0
     self._hybrid_speed_ok = False  # dp: 車速是否在混合模式範圍內（遲滯）
@@ -106,15 +114,36 @@ class AEM:
   def get_hybrid_accel(self, a_mpc, a_e2e):
     brake_on = min(E2E_BRAKE_ON, a_mpc + E2E_BRAKE_ON_REL)
     brake_off = min(E2E_BRAKE_OFF, a_mpc + E2E_BRAKE_OFF_REL)
-    if a_e2e < brake_on:
+    if not self._e2e_brake and a_e2e < brake_on:
       self._e2e_brake = True
-    elif a_e2e > brake_off:
-      self._e2e_brake = False
-    if self._e2e_brake:
-      a = min(a_mpc, a_e2e)
-      return a, a < a_mpc
-    return a_mpc, False
+      self._brake_elapsed = 0.0
+      self._release_elapsed = 0.0
 
-  # dp: 離開混合模式時重設遲滯狀態
+    if self._e2e_brake:
+      self._brake_elapsed += self.dt
+      self._release_elapsed = self._release_elapsed + self.dt if a_e2e > brake_off else 0.0
+      if (self._brake_elapsed + 1e-9 >= E2E_MIN_HOLD_S and
+          self._release_elapsed + 1e-9 >= E2E_RELEASE_CONFIRM_S):
+        self._e2e_brake = False
+      self._recovering = True
+
+    a = min(a_mpc, a_e2e) if self._e2e_brake else a_mpc
+    # Also smooth e2e recovery while still latched, not only the release frame.
+    # min preserves immediate MPC/DTSC/e2e requests for stronger deceleration.
+    if self._recovering and self._last_output is not None:
+      a = min(a, self._last_output + E2E_RECOVERY_JERK * self.dt)
+    if not self._e2e_brake and a >= a_mpc:
+      self._recovering = False
+    self._last_output = a
+    return a, a < a_mpc
+
+  def observe_output(self, acceleration):
+    # Use the actual planner output after final clipping as the next reference.
+    self._last_output = float(acceleration)
+
   def reset_hybrid(self):
     self._e2e_brake = False
+    self._brake_elapsed = 0.0
+    self._release_elapsed = 0.0
+    self._recovering = False
+    self._last_output = None
