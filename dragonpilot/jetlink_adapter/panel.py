@@ -23,7 +23,7 @@ def settings_items(params):
 
 
 STATUS_ROWS = (('connection', 'Jetlink 連線狀態'), ('model', 'eGPU 目標模型'),
-               ('active', 'eGPU 已備妥模型'), ('loading', 'eGPU 載入進度'),
+               ('active', 'eGPU 模型準備紀錄（非運作狀態）'), ('loading', 'eGPU 載入進度'),
                ('message', '載入詳細資訊'), ('reason', '連線異常'))
 
 
@@ -38,11 +38,11 @@ def status_fields(link, enabled=True):
   if stage in ('download', 'upload', 'build', 'compile') and isinstance(frac, (int, float)) and math.isfinite(frac):
     percent = f' {max(0, min(100, round(frac*100)))}%'
   loading = (stage + percent) if enabled and stage and stage != 'ready' else 'READY' if enabled and get('runnable', get('ready', False)) else 'OFF' if not enabled else 'WAIT'
-  message = str(progress.get('msg') or '—') if enabled else '—'
+  message = str(progress.get('msg') or '暫無載入資訊') if enabled else 'Jetlink 已關閉'
   if progress.get('drops') and enabled:
-    message += f" · {progress['drops']} drops; check cable/app"
-  return dict(connection=connection, model=get('model') or '—', active=get('active_model') or '—',
-              loading=loading, message=message, reason=get('reason') or '—',
+    message += f" / {progress['drops']} drops; check cable/app"
+  return dict(connection=connection, model=get('model') or '尚無目標模型', active=get('active_model') or '尚無準備紀錄',
+              loading=loading, message=message, reason=get('reason') or ('無錯誤回報' if link is not None and enabled else '尚無狀態回報' if enabled else 'Jetlink 已關閉'),
               transport=get('transport') or '', percent=percent)
 
 
@@ -54,7 +54,7 @@ def settings_snapshot():
     enabled = bool(Params().get('JetlinkLink'))
     link = status() if enabled else None
     fields = status_fields(link, enabled)
-    fields['connection'] += (' · ' + fields['transport']) if fields['transport'] else ''
+    fields['connection'] += (' / ' + fields['transport']) if fields['transport'] else ''
     settings_snapshot.fields = fields
     settings_snapshot.checked = now
   return settings_snapshot.fields
@@ -89,13 +89,13 @@ def indicator(state, proving, fresh, link):
   if state == 'full: running':
     return ('loading', '完整模型準備中', 'CHECK') if proving else ('active', '完整模型運作', 'ACTIVE')
   if link is not None and (link.reason or not link.enabled):
-    return 'failed', '無法使用・本機模型', 'ERROR'
+    return 'failed', '無法使用/本機模型', 'ERROR'
   if state == 'full: unavailable':
-    return 'failed', '連線失效・本機模型', 'LOCAL'
+    return 'failed', '連線失效/本機模型', 'LOCAL'
   if link is not None and not link.present:
-    return 'failed', '未連線・本機模型', 'OFFLINE'
+    return 'failed', '未連線/本機模型', 'OFFLINE'
   if state == 'full: ready':
-    return 'ready', '已就緒・等待切換', 'READY'
+    return 'ready', '已就緒/等待切換', 'READY'
   if state in ('full: joining', 'full: retrying'):
     return 'loading', '連線／重連中', 'WAIT'
   # modeld refused prepare()/attach(): never pretend a cached ready engine is driving.
@@ -160,8 +160,8 @@ def draw_status(rect, variant='tici', show=True):
              ('eGPU ' + short, 10), (loading_short, 9)]
     tx, ty, available = x+52, y+2, w-56
   else:
-    lines = [('Jetlink · ' + connection + ' · ' + fields['transport'], 20),
-             ('eGPU · ' + label + ' · ' + fields['loading'], 20)]
+    lines = [('Jetlink / ' + connection + ' / ' + fields['transport'], 20),
+             ('eGPU / ' + label + ' / ' + fields['loading'], 20)]
     tx, ty, available = x+86, y+4, w-94
   for value, size in lines:
     measured = measure_text_cached(font, value, size).x

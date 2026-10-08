@@ -31,3 +31,13 @@ class StatusViewsTest(unittest.TestCase):
       tree=ast.parse((root/f'selfdrive/ui/{sub}layouts/settings/developer.py').read_text())
       self.assertTrue(any(isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id==name for n in ast.walk(tree)))
     self.assertEqual({k for k,_ in STATUS_ROWS},{'connection','model','active','loading','message','reason'})
+
+  def test_no_missing_glyph_placeholders(self):
+    from dragonpilot.jetlink_adapter import panel
+    source = Path(panel.__file__).read_text()
+    for char in ('\u00b7', '\u2014', '\u30fb'):
+      self.assertNotIn(char, source)
+    f = status_fields(self.link(progress=None, reason=None))
+    self.assertEqual(f['message'], '暫無載入資訊')
+    self.assertEqual(f['reason'], '無錯誤回報')
+    self.assertEqual(status_fields(None)['reason'], '尚無狀態回報')
