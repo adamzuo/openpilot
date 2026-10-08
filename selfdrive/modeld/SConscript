@@ -138,3 +138,15 @@ def tg_compile(flags, model_name):
   )
 
 tg_compile(tg_flags, 'dmonitoring_model')
+
+# Jetlink camera preprocessing only; the local model remains independent.
+if arch == 'larch64':
+  from dragonpilot.jetlink_adapter import warp_path
+  jetlink_pythonpath = env.Dir('#').abspath + ':' + env.Dir('#jetlink_repo').abspath
+  for cw, ch in CAMERA_CONFIGS:
+    target = str(warp_path(cw, ch, model_w, model_h))
+    lenv.Command(target, tinygrad_files + compile_modeld_script +
+                 [File("#dragonpilot/jetlink_adapter/__init__.py"),
+                  File("#jetlink_repo/jetlink/openpilot/warp.py")],
+                 f'PYTHONPATH="{jetlink_pythonpath}:$PYTHONPATH" DEV=QCOM python3 -m jetlink.openpilot.warp --adapter dragonpilot.jetlink_adapter '
+                 f'--camera {cw}x{ch} --model {model_w}x{model_h} --output {target}')

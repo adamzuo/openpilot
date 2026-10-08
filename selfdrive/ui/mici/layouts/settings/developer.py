@@ -86,7 +86,9 @@ class DeveloperLayoutMici(NavScroller):
                                               toggle_callback=lambda checked: (gui_app.set_show_touches(checked),
                                                                                gui_app.set_show_fps(checked)))
 
+    from dragonpilot.jetlink_adapter.panel import mici_settings_items
     self._scroller.add_widgets([
+      *mici_settings_items(ui_state.params),
       self._adb_toggle,
       self._ssh_toggle,
       self._ssh_keys_btn,

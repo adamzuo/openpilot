@@ -205,6 +205,11 @@ class HudRenderer(Widget):
 
     # Draw performance info at bottom
     self._draw_performance_info(rect)
+    self.draw_jetlink(rect)
+
+  def draw_jetlink(self, rect):
+    from dragonpilot.jetlink_adapter.panel import draw_status
+    draw_status(rect, variant='tici')
 
   def user_interacting(self) -> bool:
     return self._exp_button.is_pressed

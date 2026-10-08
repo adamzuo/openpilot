@@ -102,6 +102,8 @@ class AugmentedRoadView(CameraView):
     self.model_renderer.render(self._content_rect)
     if not hide_hud:
       self._hud_renderer.render(self._content_rect)
+    else:
+      self._hud_renderer.draw_jetlink(self._content_rect)
     self.alert_renderer.render(self._content_rect)
     if not hide_hud:
       self.driver_state_renderer.render(self._content_rect)

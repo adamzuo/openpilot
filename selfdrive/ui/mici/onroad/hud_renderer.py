@@ -314,6 +314,8 @@ class HudRenderer(Widget):
     # --- 最後繪製：自帶雙閃爍頻率的方向燈與盲區邊條 ---
     # 確保圖層順序在最上方，不被裁切
     self._draw_edge_warnings(rect)
+    from dragonpilot.jetlink_adapter.panel import draw_status
+    draw_status(rect, variant='mici', show=self._can_draw_top_icons)
 
   def _draw_edge_warnings(self, rect: rl.Rectangle) -> None:
     """繪製兩側方向燈與盲區警示 (加入圓角效果並垂直置中)"""

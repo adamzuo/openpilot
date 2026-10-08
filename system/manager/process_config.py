@@ -5,6 +5,7 @@ import platform
 from cereal import car
 from openpilot.common.params import Params
 from openpilot.system.hardware import PC, TICI
+from dragonpilot import jetlink_adapter
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
@@ -94,6 +95,7 @@ procs = [
   PythonProcess("micd", "system.micd", iscar, enabled=not LITE),
   PythonProcess("timed", "system.timed", always_run, enabled=not PC),
 
+  PythonProcess("jetlinkd", "dragonpilot.jetlink_adapter", jetlink_adapter.should_run, restart_if_crash=True),
   PythonProcess("modeld", "selfdrive.modeld.modeld", only_onroad),
   PythonProcess("dmonitoringmodeld", "selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(WEBCAM or not PC) and not LITE),
 

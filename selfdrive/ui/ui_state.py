@@ -38,6 +38,7 @@ class UIState:
     self.sm = messaging.SubMaster(
       [
         "modelV2",
+        "modelExt",
         "controlsState",
         "onroadEvents",
         "liveCalibration",

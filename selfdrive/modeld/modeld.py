@@ -157,6 +157,10 @@ def main(demo=False):
   params.put_bool("UsbGpuPresent", _present)
   params.put_bool("UsbGpuCompiled", _compiled)
 
+  from dragonpilot import jetlink_adapter
+  from dragonpilot.jetlink_adapter.model import attach_full
+  full_link = jetlink_adapter.prepare()
+
   if not USBGPU:
     # USB GPU currently saturates a core so can't do this yet,
     # also need to move the aux USB interrupts for good timings
@@ -190,9 +194,15 @@ def main(demo=False):
   model = ModelState(vipc_client_main.width, vipc_client_main.height, USBGPU)
   cloudlog.warning(f"models loaded in {time.monotonic() - st:.1f}s, modeld starting")
 
+  if full_link:
+    try:
+      model = attach_full(model, vipc_client_main.width, vipc_client_main.height)
+    except Exception:
+      cloudlog.exception('Jetlink full model unavailable; continuing locally')
+
   # messaging
   pm = PubMaster(["modelV2", "drivingModelData", "cameraOdometry", "modelExt"])
-  sm = SubMaster(["deviceState", "carState", "roadCameraState", "liveCalibration", "driverMonitoringState", "carControl", "liveDelay"])
+  sm = SubMaster(["deviceState", "carState", "roadCameraState", "liveCalibration", "driverMonitoringState", "carControl", "liveDelay", "controlsStateExt"], frequency=20)
 
   publish_state = PublishState()
   params = Params()
@@ -302,12 +312,20 @@ def main(demo=False):
     inputs:dict[str, np.ndarray] = {
       'desire_pulse': vec_desire,
       'traffic_convention': traffic_convention,
+      'action_t': np.array([lat_delay, long_delay], dtype=np.float32),
     }
 
+    if hasattr(model, 'joined'):
+      model.joined.in_control = not sm.all_checks(['carState', 'carControl', 'controlsStateExt']) or bool(sm['carControl'].enabled or sm['carControl'].latActive or sm['carControl'].longActive or sm['controlsStateExt'].alkaActive)
+      model.joined.frame_drop_ratio = frame_drop_ratio
+    handovers = model.joined.handovers if hasattr(model, "joined") else 0
     mt1 = time.perf_counter()
     model_output = model.run(bufs, transforms, inputs, prepare_only)
     mt2 = time.perf_counter()
     model_execution_time = mt2 - mt1
+    if hasattr(model, 'joined') and model.joined.handovers != handovers:
+      frame_dropped_filter.x = 0.
+      frame_drop_ratio = 0.
 
     if model_output is not None:
       modelv2_send = messaging.new_message('modelV2')
@@ -330,6 +348,11 @@ def main(demo=False):
       RED.update(modelv2_send.modelV2.roadEdgeStds, modelv2_send.modelV2.laneLineProbs)
       model_ext_send.modelExt.leftEdgeDetected = RED.left_edge_detected
       model_ext_send.modelExt.rightEdgeDetected = RED.right_edge_detected
+      if hasattr(model, 'joined'):
+        model_ext_send.modelExt.jetlinkState = 'full: ' + model.joined.big_model_state
+        model_ext_send.modelExt.jetlinkProving = model.proving
+      else:
+        model_ext_send.modelExt.jetlinkState = 'local'
       DH.update(sm['carState'], sm['carControl'].latActive, lane_change_prob, RED.left_edge_detected, RED.right_edge_detected)
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction
