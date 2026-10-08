@@ -325,7 +325,12 @@ class SelfdriveD:
     # All events here should at least have NO_ENTRY and SOFT_DISABLE.
     num_events = len(self.events)
 
+    if self.sm.valid['modelExt'] and self.sm['modelExt'].jetlinkProving:
+      self.events.add(EventName.modeldLagging)
     not_running = {p.name for p in self.sm['managerState'].processes if not p.running and p.shouldBeRunning}
+    # Optional accelerator loss must not disable the healthy local control stack.
+    # Full-mode modeld falls back through JoiningModelState; modeld remains required.
+    not_running -= {'jetlinkd'}
     if self.sm.recv_frame['managerState'] and len(not_running):
       if not_running != self.not_running_prev:
         cloudlog.event("process_not_running", not_running=not_running, error=True)

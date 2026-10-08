@@ -22,6 +22,11 @@ struct CarStateExt @0xaedffd8f31e7b55d {
 struct ModelExt @0xf35cc4560bbf6ec2 {
   leftEdgeDetected @0 :Bool;
   rightEdgeDetected @1 :Bool;
+  jetlinkState @2 :Text;
+  reservedJetlink3 @3 :Text;
+  reservedJetlink4 @4 :Float32;
+  reservedJetlink5 @5 :Float32;
+  jetlinkProving @6 :Bool;
 }
 
 struct DashyState @0xda96579883444c35 {

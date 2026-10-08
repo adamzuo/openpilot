@@ -2,7 +2,7 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.ui.widgets.ssh_key import ssh_key_item
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
-from openpilot.system.ui.widgets.list_view import toggle_item, button_item
+from openpilot.system.ui.widgets.list_view import toggle_item, button_item, text_spin_button_item
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
 from openpilot.system.ui.lib.application import gui_app
@@ -96,7 +96,9 @@ class DeveloperLayout(Widget):
     )
     self._on_enable_ui_debug(self._params.get_bool("ShowDebugInfo"))
 
+    from dragonpilot.jetlink_adapter.panel import settings_items
     self._scroller = Scroller([
+      *settings_items(self._params),
       self._adb_toggle,
       self._ssh_toggle,
       self._ssh_keys,

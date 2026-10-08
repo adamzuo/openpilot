@@ -173,7 +173,7 @@ function launch {
   fi
 
   ln -sfn $(pwd) /data/pythonpath
-  export PYTHONPATH="$PWD"
+  export PYTHONPATH="$PWD:$PWD/jetlink_repo"
 
   if [ -f /AGNOS ]; then
     set_tici_hw
