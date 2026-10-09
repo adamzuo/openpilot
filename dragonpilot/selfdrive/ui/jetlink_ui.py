@@ -12,6 +12,7 @@ dragonpilot/selfdrive/assets/icons/jetlink*.png: zoompilot uses the same
 icons for the link.
 """
 import math
+from typing import Union
 
 import pyray as rl
 
@@ -133,7 +134,7 @@ class JetlinkIcons:
     self.default = gui_app.texture(f"{ICON_DIR}/jetlink.png", width, height)
     self.orange = gui_app.texture(f"{ICON_DIR}/jetlink_orange.png", width, height)
 
-  def for_state(self, state: JetlinkState) -> tuple[rl.Texture | None, float]:
+  def for_state(self, state: JetlinkState) -> tuple[Union[rl.Texture, None], float]:
     """(texture, opacity) for a state; None while disconnected. Loading pulses,
     waiting is a steady dim green, failed is orange, ready/active solid green."""
     if state == JetlinkState.DISCONNECTED:
