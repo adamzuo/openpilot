@@ -180,6 +180,37 @@ class ProvisioningRun:
       parts.spec.clear_ready()
       parts.progress.clear()
       return False
+
+    # dp: following the far end, its hello decides, before identity() (which needs the
+    # network for the comma's default) and before anything is asked of it. run() skips
+    # the link only when an earlier hello is on record, and /dev/shm is empty after every
+    # boot: without this the first run of a boot asked the phone for the comma's default
+    # model and the phone swapped out the one its user picked (phone log, 2026-10-10)
+    hello = None
+    follow = getattr(parts.op, 'follow_far_end', None)
+    if callable(follow) and follow():
+      parts.progress.report('connect', 0.0, 'connecting')
+      hello = self.hello()
+      loaded, cached = hello.get('loaded'), hello.get('cached_models')
+      if isinstance(loaded, str) and loaded:
+        # one round trip: a loaded engine is answered from its sha alone, nothing is
+        # swapped, and the spec record it leaves is what the panels call ready
+        built = parts.spec.ready_spec()
+        nbytes = built.nbytes if built is not None and built.sha256 == loaded else (parts.models.size_for(loaded) or 0)
+        self.log.warning("jetlink: following the far end's model %s, nothing to provision", parts.models.name_for(loaded))
+        spec = link.ensure(parts, self.client, loaded, nbytes, None, progress=parts.progress.report_with_eta,
+                           should_stop=lambda: self.stop)
+        parts.progress.report('ready', 1.0, 'engine ready')
+        self.log.warning("jetlink: engine ready for %s", spec.sha256[:16])
+        return True
+      if isinstance(cached, list) and cached:
+        # it has models of its own and is between them (loading one, or its user has not
+        # picked yet): leave it to them, and look again on the next run
+        self.log.warning("jetlink: the far end has %d model(s) but none loaded, leaving the pick to it", len(cached))
+        parts.progress.clear()
+        return False
+      # a far end with nothing at all: give it the comma's default, as before
+
     sha256, nbytes = link.identity(parts, entry)
 
     # only needed if the server turns out not to have this model; None is a
@@ -194,7 +225,8 @@ class ProvisioningRun:
       return link.ensure(parts, self.client, sha256, nbytes, path, progress=parts.progress.report_with_eta,
                          should_stop=lambda: self.stop)
 
-    hello = self.hello()
+    if hello is None:
+      hello = self.hello()
     self.log.warning("jetlink: server %s trt %s", hello.get('device'), hello.get('trt_version'))
     try:
       spec = ensure(model_path)
