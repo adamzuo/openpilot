@@ -303,16 +303,22 @@ def main(demo=False):
     run_count = run_count + 1
 
     frame_drop_ratio = frames_dropped / (1 + frames_dropped)
-    prepare_only = vipc_dropped_frames > 0
+    # The joining model must see every frame to apply its own lag/fallback
+    # policy. Keep dp's skip behaviour only for the standalone local model.
+    prepare_only = vipc_dropped_frames > 0 and not hasattr(model, 'joined')
     if prepare_only:
       cloudlog.error(f"skipping model eval. Dropped {vipc_dropped_frames} frames")
 
     bufs = {name: buf_extra if 'big' in name else buf_main for name in model.vision_input_names}
     transforms = {name: model_transform_extra if 'big' in name else model_transform_main for name in model.vision_input_names}
+    frame_delay = DT_MDL
+    action_delay = DT_MDL / 2
+    lat_action_t = lat_delay + frame_delay + action_delay
+    long_action_t = long_delay + frame_delay + action_delay
     inputs:dict[str, np.ndarray] = {
       'desire_pulse': vec_desire,
       'traffic_convention': traffic_convention,
-      'action_t': np.array([lat_delay, long_delay], dtype=np.float32),
+      'action_t': np.array([lat_action_t, long_action_t], dtype=np.float32),
     }
 
     if hasattr(model, 'joined'):
@@ -333,9 +339,7 @@ def main(demo=False):
       posenet_send = messaging.new_message('cameraOdometry')
       model_ext_send = messaging.new_message('modelExt', valid=True)
 
-      frame_delay = DT_MDL # compensate for time passed since the frame was captured: current_time - timestamp_eof is 50ms on average
-      action_delay = DT_MDL / 2 # middle of the interval between model output (current state) and next frame (expected state)
-      action = get_action_from_model(model_output, prev_action, lat_delay + frame_delay + action_delay, long_delay + frame_delay + action_delay, v_ego, dp_lat_offset_cm)
+      action = get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego, dp_lat_offset_cm)
       prev_action = action
       fill_model_msg(drivingdata_send, modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
