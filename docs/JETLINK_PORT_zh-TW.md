@@ -114,7 +114,7 @@ Jetlink 讓接在 comma USB-C 埠上的外部裝置（Jetson Orin Nano Super / L
 | D10 | jetlink `warp.py` | 原版 | 3 處相容：`CapturedJit.linear` vs `_linear`；`as_memoryview(no_sync=)` 不存在時退回；無 `tinygrad.engine.worker` 時略過。另：QCOM 的 graph-only 快速路徑失敗時改為重播整個 capture（多約 0.6 ms），而非拒絕連線 | dp 的 tinygrad `eecd4706`（2026-05-25） |
 | D11 | 設定 UI | Models 面板內一列 | 獨立「Jetlink」面板 + 即時連線列 | dp 無 Models 面板 |
 | D12 | 行車 UI（tici） | 只有側欄圖示 | 側欄圖示 + 狀態卡 + 行車 HUD 徽章 | 需求：行車介面顯示連線狀況 |
-| D14 | jetlink 套件連線層 | 原版 | `lending.SERVER_FIELDS` 多記 `loaded`/`cached_models`；`link.open_link` 跟隨外部裝置載入的模型；`stand_in` 對無法得知大小的已載入模型以 0 詢問（伺服器以 sha 回答）；`provision` 在外部裝置已有模型時不下載、跟隨模式停車時不 provisioning | 從手機取得模型選單 |
+| D14 | jetlink 套件連線層 | 原版 | `lending.SERVER_FIELDS` 多記 `loaded`/`cached_models`；`link.open_link` 跟隨外部裝置載入的模型；`stand_in` 對無法得知大小的已載入模型以 0 詢問（伺服器以 sha 回答）；`provision` 在外部裝置已有模型時不下載、跟隨模式停車時不 provisioning；provisioning 先 hello 再決定：外部裝置已載入模型就只確認該模型（不換模型、不需網路），有模型但未載入就交給它自己選，完全沒有模型才給預設（v7，修正開機後第一次 provisioning 把手機模型換掉） | 從手機取得模型選單 |
 | D13 | 參考 modeld 的手機前車融合 | — | **未移植** `apply_phone_leads`、`LeadPriorityGuard`、`jetlink.vision`、`jetlink_context` | 這些不在 zoompilot 原始碼中（屬自製手機前車方案），無法依原始碼移植 |
 
 ## 6. 驗證
@@ -144,6 +144,6 @@ Jetlink 讓接在 comma USB-C 埠上的外部裝置（Jetson Orin Nano Super / L
 ## 8. 已知風險
 
 - **QCOM 路徑未實機驗證**：若 warp 在 comma 上失敗，log 有「jetlink load failed」，modeld 安全地維持小模型。
-- 跟隨模式依賴外部裝置回報的 `loaded`；手機若沒載入任何模型，就回到 comma 指定或預設模型（Cinque Terre V3），由 comma 停車時下載上傳。
+- 跟隨模式依賴外部裝置回報的 `loaded`；手機若完全沒有任何模型，才回到預設模型（Cinque Terre V3），由 comma 停車時下載上傳。手機有模型但當下未載入（切換中）時 comma 不介入，下一輪再看。
 - 大模型幀不套 dp 車道偏移（`dp_lat_offset_cm`）；切回小模型時偏移恢復，橫向位置可能在切換瞬間略有差異。
 - `log.capnp` 的 EventName 新增序號 @100–@103；之後與 upstream 合併若 upstream 也新增事件，需調整序號。

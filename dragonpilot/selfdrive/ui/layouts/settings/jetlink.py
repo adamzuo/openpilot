@@ -23,7 +23,7 @@ from openpilot.system.ui.widgets.option_dialog import MultiOptionDialog
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from dragonpilot import jetlink_adapter
 from dragonpilot.selfdrive.ui import jetlink_ui
-from dragonpilot.selfdrive.ui.jetlink_ui import LINK_MODES, LINK_MODE_TITLES, LINK_PARAM
+from dragonpilot.selfdrive.ui.jetlink_ui import LINK_MODES, LINK_MODE_TITLES, LINK_PARAM, NONE_TEXT
 
 DESCRIPTION = ("在連接於 comma USB-C 埠的外部裝置（Jetson / Linux PC / Mac 走 USB，iPhone 走 iOS）上運算大模型。"
                "開啟後會關閉 ADB；只能在熄火（offroad）時切換。連線中斷或延遲時，comma 會立刻改回自己的小模型繼續駕駛。")
@@ -40,7 +40,7 @@ class JetlinkLayout(Widget):
     super().__init__()
     self._last_description = None
     # what the far end reported, read at most once a second (files and params, not per frame)
-    self._far = {'loaded': "—", 'built': "", 'model': "—", 'following': True, 'at': 0.0}
+    self._far = {'loaded': NONE_TEXT, 'built': "", 'model': NONE_TEXT, 'following': True, 'at': 0.0}
 
     self._link_item = multiple_button_item(
       "Jetlink", DESCRIPTION,
@@ -56,7 +56,7 @@ class JetlinkLayout(Widget):
     self._model_item = text_item("行車將使用", self._model)
     self._ready_item = text_item("外部裝置已建置引擎", lambda: _bool_text(bool(ui_state.jetlink and ui_state.jetlink.ready)))
     self._progress_item = text_item("進度", self._progress)
-    self._reason_item = text_item("無法使用原因", lambda: (ui_state.jetlink.reason if ui_state.jetlink and ui_state.jetlink.reason else "—"))
+    self._reason_item = text_item("無法使用原因", lambda: (ui_state.jetlink.reason if ui_state.jetlink and ui_state.jetlink.reason else NONE_TEXT))
     self._adb_item = text_item("ADB", lambda: "已由 Jetlink 關閉" if ui_state.adb_blocked else ("開啟" if ui_state.params.get_bool("AdbEnabled") else "關閉"))
 
     # an iPhone on a direct cable is asked to charge from the comma; off by default, some lose the link once powered
@@ -87,13 +87,13 @@ class JetlinkLayout(Widget):
   @staticmethod
   def _transport() -> str:
     j = ui_state.jetlink
-    return j.transport if j is not None else "—"
+    return j.transport if j is not None else NONE_TEXT
 
   @staticmethod
   def _port() -> str:
     j = ui_state.jetlink
     if j is None or j.port is None:
-      return "—"
+      return NONE_TEXT
     return "無裝置" if j.port == "empty" else "有裝置"
 
   def _model(self) -> str:
@@ -104,7 +104,7 @@ class JetlinkLayout(Widget):
   def _progress() -> str:
     p = jetlink_ui.progress()
     if p is None:
-      return "—"
+      return NONE_TEXT
     stage, frac, msg = p
     label = PROGRESS_STAGES.get(stage, stage)
     pct = f" {frac * 100:.0f}%" if 0.0 < frac < 1.0 else ""
@@ -132,10 +132,10 @@ class JetlinkLayout(Widget):
     if following and loaded:
       model = name(loaded)
     elif j is not None:
-      model = j.active_model or j.model or j.default_model or "—"
+      model = j.active_model or j.model or j.default_model or NONE_TEXT
     else:
-      model = "—"
-    self._far = {'loaded': name(loaded) or "—",
+      model = NONE_TEXT
+    self._far = {'loaded': name(loaded) or "未回報",
                  'built': ("外部裝置已建置：" + "、".join(name(b) for b in built)) if built else "外部裝置尚未回報已建置的模型（連線一次後顯示）。",
                  'model': model, 'following': following, 'at': now}
 
@@ -158,7 +158,7 @@ class JetlinkLayout(Widget):
     self._menu_labels = {follow_label: None}
     for row in self._menu:
       notes = [n for n, on in (("已載入", row['loaded']), ("外部裝置已建置", row['built']), ("comma 已下載", row['downloaded'])) if on]
-      label = row['name'] + (f" · {'、'.join(notes)}" if notes else "")
+      label = row['name'] + (f"（{'、'.join(notes)}）" if notes else "")
       self._menu_labels[label] = row['ref']
     slot = ui_state.params.get(jetlink_adapter.KEYS.big_model)
     current = follow_label if self._following_now() else next((k for k, v in self._menu_labels.items() if v == (slot or {}).get('ref')), "")

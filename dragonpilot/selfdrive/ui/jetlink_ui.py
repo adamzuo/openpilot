@@ -26,6 +26,10 @@ LINK_MODE_TITLES = {"off": "關閉", "usb": "USB", "ios": "iOS"}
 
 ICON_DIR = "../../dragonpilot/selfdrive/assets/icons"
 
+# the UI fonts are bitmaps holding ASCII, a few symbols and the characters of the
+# translation files: a character outside them (an em dash, a middle dot) draws as "?"
+NONE_TEXT = "無"
+
 # one short word per state, for the sidebar card and the onroad badge
 STATE_TEXT = {
   JetlinkState.DISCONNECTED: "未連線",
@@ -109,7 +113,7 @@ def status_note(model_name: str | None = None) -> str:
   view = ui_state.jetlink_view
   if view is None:
     return ""
-  big_name = (model_name if model_name and model_name != "—" else None) or view.model or "大模型"
+  big_name = (model_name if model_name and model_name != NONE_TEXT else None) or view.model or "大模型"
   state = ui_state.jetlink_state
   if state in (JetlinkState.FAILED, JetlinkState.UNCOMPILED):
     if view.reason:
