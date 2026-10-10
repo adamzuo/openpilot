@@ -543,6 +543,21 @@ def _alka() -> bool:
   return _alka_enabled
 
 
+# dp (divergence from zoompilot): ALKA on with ACC main on counts as in control, as MADS does,
+# except while the gear is P, N or R. There ALKA is paused and nothing steers, and controlsd keeps
+# ALKA from starting for ALKA_HOLD_SECONDS after a swap, so shifting to D during the large model's
+# proving second cannot hand it the wheel. Without this the large model, ready after a hand-back,
+# waited out a whole stop in park with ACC main on (2026-10-10 drive log: 20 s in N/R/P, nothing
+# steering). False restores zoompilot's gate exactly: ACC main off is then the only way in
+SWAP_WHILE_PARKED = True
+PARKED_GEARS = frozenset({'park', 'neutral', 'reverse'})
+
+
+def parked(car_state) -> bool:
+  """The gear lets the large model swap in with ALKA on and ACC main on (SWAP_WHILE_PARKED)."""
+  return SWAP_WHILE_PARKED and str(car_state.gearShifter) in PARKED_GEARS
+
+
 @_guarded(True)
 def in_control(sm) -> bool:
   """modeld, before every frame, onto the model: is openpilot or ALKA in control?
@@ -556,12 +571,13 @@ def in_control(sm) -> bool:
   carStateExt.lkasOn, which dp tracks as ACC main on every brand, so ALKA paused
   (P/N/R, door, seatbelt, uncalibrated) still counts and ACC main off releases
   it. ALKA has no button of its own: main off is its only off switch. A service
-  late or invalid counts as in control."""
+  late or invalid counts as in control. dp: ALKA paused by P/N/R does not count
+  (SWAP_WHILE_PARKED)."""
   if not (sm.all_alive(IN_CONTROL) and sm.all_valid(IN_CONTROL)):
     return True
   if sm['carControl'].enabled or sm['carControl'].latActive or sm['controlsStateExt'].alkaActive:
     return True
-  return bool(_alka() and sm['carStateExt'].lkasOn)
+  return bool(_alka() and sm['carStateExt'].lkasOn and not parked(sm['carState']))
 
 
 # dp: how long ALKA may not start steering after the large model swaps in: its

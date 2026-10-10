@@ -74,6 +74,15 @@ QUICK_RETRIES = 3
 # how long the check may take; both off the frame loop
 KEEPALIVE_PERIOD = 10.0
 PING_TIMEOUT = 2.0
+# dp: a keepalive that fails while the link waits for a window cost the frame loop nothing (no
+# swap, no demote), so it reopens at once rather than on the doubling backoff. A Mac's Jetlink app
+# left a waiting link's pings unanswered ("only 0 of 32 bytes arrived in time") again and again
+# while every new link answered its hello; on the backoff that was a ready link for 12 s out of
+# every 60 to 74, and a driver who released control in a gap got nothing (2026-10-10 drive log).
+# QUICK_RETRIES of these in a row reopen after KEEPALIVE_RETRY_DELAY, the ones after that after
+# KEEPALIVE_RETRY_DELAY_MAX: a host that answers hellos and nothing else is not hammered
+KEEPALIVE_RETRY_DELAY = 1.0
+KEEPALIVE_RETRY_DELAY_MAX = 5.0
 # how often a backoff looks at the gadget. A host that configures it again
 # after it went away is a replug, which the backoff is not for: one waited 16 s
 # for a Jetson that was back in 0.4 (2026-09-29)
@@ -176,6 +185,8 @@ class JoiningModelState:
     # and whether this failure streak has already skipped a backoff for a replug
     self._host_left = False
     self._replugged = False
+    # dp: keepalives lost in a row since the last ping that came back (KEEPALIVE_RETRY_DELAY)
+    self._keepalive_lost = 0
 
     # in control until modeld says otherwise, so a swap can never happen on no
     # information
@@ -583,6 +594,7 @@ class JoiningModelState:
         return  # swapped in on a frame, or closed under us
       try:
         joined[0].ping(timeout=PING_TIMEOUT)
+        self._keepalive_lost = 0
       except Exception as e:
         self._available = False
         self._log.warning("jetlink: the link died before it could be used (%s), reopening", e)
@@ -591,7 +603,14 @@ class JoiningModelState:
           joined[0].close()
         except Exception:
           self._log.exception('jetlink: closing the dead link')
-        self._back_off()
+        # dp: not _back_off(): nothing was swapped or demoted, so the streak it doubles on is left
+        # alone and the link is reopened straight away (KEEPALIVE_RETRY_DELAY)
+        self._keepalive_lost += 1
+        delay = KEEPALIVE_RETRY_DELAY if self._keepalive_lost <= QUICK_RETRIES else KEEPALIVE_RETRY_DELAY_MAX
+        self._rejoin_at = time.monotonic() + delay
+        self._rejoin.set()
+        self._log.warning("jetlink: reopening in %.0f s (keepalive lost %d in a row, failure streak %d unchanged)",
+                          delay, self._keepalive_lost, self._failures)
         return
       with self._lock:
         stopped = self._stop.is_set()

@@ -106,6 +106,13 @@ def progress() -> tuple[str, float, str] | None:
   return stage, float(p.get('frac', 0.0)), msg
 
 
+def _alka_on() -> bool:
+  try:
+    return ui_state.params.get_bool("dp_lat_alka")
+  except Exception:
+    return False
+
+
 def status_note(model_name: str | None = None) -> str:
   """The failover story (zoompilot's Model Status note, jetlink half). `model_name`:
   the model that will drive when the caller knows better than the snapshot (following
@@ -120,7 +127,9 @@ def status_note(model_name: str | None = None) -> str:
       return f"大模型無法使用：{view.reason}。由小模型駕駛。"
     return "大模型無法使用，由小模型駕駛。"
   if state == JetlinkState.WAITING:
-    return f"{big_name} 已就緒。關閉巡航主開關（ALKA 隨之關閉）即切換，約 1 秒後再開啟啟用。"
+    if _alka_on():
+      return f"{big_name} 已就緒。ALKA 開啟中，取消巡航不會切換：關閉巡航主開關約 1 秒，或停車排入 P／N／R 檔即切換。"
+    return f"{big_name} 已就緒。取消巡航即切換，約 1 秒後再啟用。"
   if state == JetlinkState.LOADING:
     return "大模型就緒前由小模型駕駛。"
   if not view.ready:

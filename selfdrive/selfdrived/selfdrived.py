@@ -25,6 +25,7 @@ from openpilot.system.version import get_build_metadata
 from openpilot.system.hardware import HARDWARE
 from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from dragonpilot.selfdrive.selfdrived.accelerator_events import AcceleratorEvents
+from dragonpilot import jetlink_adapter
 
 REPLAY = "REPLAY" in os.environ
 SIMULATION = "SIMULATION" in os.environ or os.getenv("LITE") is not None
@@ -363,7 +364,9 @@ class SelfdriveD:
     # dp - jetlink: a switch either way costs modeld a frame or two, which must not read as a comm or localizer fault
     # the adapter's swap gate (jetlink_adapter.in_control): openpilot enabled, ALKA steering, or ALKA on with
     # ACC main on (dp's lkasOn), as zoompilot counts MADS enabled, paused included
-    in_control = self.enabled or self.sm['carControl'].latActive or (self.alka and self.sm['carStateExt'].lkasOn)
+    # (ALKA paused by P/N/R does not count: jetlink_adapter.SWAP_WHILE_PARKED)
+    in_control = self.enabled or self.sm['carControl'].latActive or \
+      (self.alka and self.sm['carStateExt'].lkasOn and not jetlink_adapter.parked(CS))
     self.accelerator_events.update(self.sm, in_control, self.events)
     big_model_settling = self.accelerator_events.settling
     if not self.sm.all_checks() and no_system_errors and not big_model_settling:

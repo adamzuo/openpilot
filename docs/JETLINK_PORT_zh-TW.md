@@ -82,7 +82,7 @@ Jetlink 讓接在 comma USB-C 埠上的外部裝置（Jetson Orin Nano Super / L
 | 狀態 (`acceleratorState`) | 畫面 | 說明 |
 | --- | --- | --- |
 | joining / retrying | 圖示閃爍、「連線中」 | 小模型駕駛，背景連線 |
-| ready | 半透明綠、「待切換」 | 已就緒，等待「無控制」窗口；控制中時跳「大模型已就緒／關閉巡航主開關後重新啟用即可切換」3 秒 |
+| ready | 半透明綠、「待切換」 | 已就緒，等待「無控制」窗口；控制中時跳「大模型已就緒」3 秒，第二行依 ALKA 而定：ALKA 開啟→「ALKA 開啟中：關閉巡航主開關或排入 P 檔即切換」（ALKA 在主開關開著時一直控制橫向，取消巡航不會釋放）；ALKA 關閉→「取消巡航即可切換」 |
 | running（bigModel=true） | 綠色、「大模型」 | 切換後 1 秒 no-entry「大模型切換中」，之後提示「大模型已啟用」 |
 | 斷線/延遲 | 橘色或回到閃爍 | 控制中則警告「大模型連線中斷／改用小模型駕駛」5 秒，**不解除**，小模型從重置的歷史接手 |
 
@@ -115,6 +115,8 @@ Jetlink 讓接在 comma USB-C 埠上的外部裝置（Jetson Orin Nano Super / L
 | D11 | 設定 UI | Models 面板內一列 | 獨立「Jetlink」面板 + 即時連線列 | dp 無 Models 面板 |
 | D12 | 行車 UI（tici） | 只有側欄圖示 | 側欄圖示 + 狀態卡 + 行車 HUD 徽章 | 需求：行車介面顯示連線狀況 |
 | D14 | jetlink 套件連線層 | 原版 | `lending.SERVER_FIELDS` 多記 `loaded`/`cached_models`；`link.open_link` 跟隨外部裝置載入的模型；`stand_in` 對無法得知大小的已載入模型以 0 詢問（伺服器以 sha 回答）；`provision` 在外部裝置已有模型時不下載、跟隨模式停車時不 provisioning；provisioning 先 hello 再決定：外部裝置已載入模型就只確認該模型（不換模型、不需網路），有模型但未載入就交給它自己選，完全沒有模型才給預設（v7，修正開機後第一次 provisioning 把手機模型換掉） | 從手機取得模型選單 |
+| D15 | 切換時機（ALKA） | MADS 開著（含暫停）一律算控制中，只有關 ACC 主開關才能切換 | 同左，但排檔在 P／N／R 時 ALKA 暫停、無人控制，允許切換（`jetlink_adapter.SWAP_WHILE_PARKED = True`；controlsd 在切換後 1.2 秒內不讓 ALKA 啟動，打回 D 檔也不會在驗證期接手）。設為 False 即回到與 zoompilot 完全相同 | 2026-10-10 行車紀錄：大模型就緒後停車排 N／R／P 20 秒、無任何控制，卻因主開關開著無法切換 |
+| D16 | 等待切換時的連線檢查 | ping 失敗即重開並計入加倍退避（1、1、1、5、10、20、40、60 秒） | ping 失敗即重開，但不計入退避：連續 3 次以內 1 秒後重開，之後 5 秒（`joining.KEEPALIVE_RETRY_DELAY`） | 2026-10-10 行車紀錄：Mac App 對等待中的連線 ping 不回（only 0 of 32 bytes），每次新連線 hello 正常；加倍退避讓就緒時間只剩約 1/5 |
 | D13 | 參考 modeld 的手機前車融合 | — | **未移植** `apply_phone_leads`、`LeadPriorityGuard`、`jetlink.vision`、`jetlink_context` | 這些不在 zoompilot 原始碼中（屬自製手機前車方案），無法依原始碼移植 |
 
 ## 6. 驗證
