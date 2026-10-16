@@ -244,6 +244,9 @@ def main(demo=False):
   pm = PubMaster(["modelV2", "drivingModelData", "cameraOdometry", "modelExt"])
   sm = SubMaster(["deviceState", "carState", "roadCameraState", "liveCalibration", "driverMonitoringState", "carControl", "liveDelay",
                   *[s for s in jetlink_adapter.IN_CONTROL if s not in ("carState", "carControl")]])
+  # dp - jetlink: the joining model asks the adapter before every frame whether anything is in control
+  # (jetlink API 3); the adapter reads this SubMaster, updated above run() as every frame's is
+  jetlink_adapter.use_submaster(sm)
 
   publish_state = PublishState()
   params = Params()
@@ -364,9 +367,8 @@ def main(demo=False):
 
     # dp - jetlink: a model can change which model drives inside run() (the joining model counts its
     # handovers); the stall of one is not lag, and nor are the drops of the frame it happens on. The
-    # joining model hands a large model back on this share of dropped frames, and swaps one in only
-    # while nothing is in control
-    model.in_control = jetlink_adapter.in_control(sm)
+    # joining model hands a large model back on this share of dropped frames. Whether anything is in
+    # control it asks the adapter itself inside run() (jetlink API 3, use_submaster above)
     model.frame_drop_ratio = frame_drop_ratio
     handovers = getattr(model, 'handovers', 0)
     big_driving = model is not small_model and getattr(model, 'chestnut', False)
