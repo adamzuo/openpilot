@@ -109,9 +109,11 @@ class CarState(CarStateBase, CarStateExt):
     ret.steeringPressed = abs(ret.steeringTorque) > STEER_THRESHOLD
 
     # 0 inactive, 1 active, 2 temporarily limited, 3 failed
+    # GM EPS latches status 3 (failed) when LKA is active and vehicle speed drops below
+    # ~10 km/h (seen on Equinox). It is recoverable (clears after speed recovers / restart),
+    # so treat it as temporary to avoid the permanent "LKAS Fault: Restart the Car" lockout.
     self.lkas_status = pt_cp.vl["PSCMStatus"]["LKATorqueDeliveredStatus"]
-    ret.steerFaultTemporary = self.lkas_status == 2
-    ret.steerFaultPermanent = self.lkas_status == 3
+    ret.steerFaultTemporary = self.lkas_status in (2, 3)
 
     # 1 - open, 0 - closed
     ret.doorOpen = (pt_cp.vl["BCMDoorBeltStatus"]["FrontLeftDoor"] == 1 or
