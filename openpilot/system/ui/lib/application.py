@@ -104,6 +104,7 @@ NOTO_FONTS = {
 }
 HIGH_RES_SPEED_CHARS = "0123456789.-–/ kmhp"
 HIGH_RES_SPEED_FONT_SIZE = 280
+HIGH_RES_TEXT_FONT_SIZE = 176
 
 
 class FontWeight(StrEnum):
@@ -134,7 +135,7 @@ class TextAlignmentVertical(IntEnum):
 
 def font_fallback(font: rl.Font) -> rl.Font:
   """Use a Noto fallback for languages not covered by Inter."""
-  if multilang.requires_font_fallback() and not gui_app.is_high_res_speed_font(font):
+  if multilang.requires_font_fallback() and not gui_app.is_high_res_font(font):
     return gui_app.fallback_font()
   return font
 
@@ -225,7 +226,8 @@ class GuiApplication(GuiApplicationExt):
     self._fonts: dict[FontWeight, rl.Font] = {}
     self._fallback_fonts: dict[str, rl.Font] = {}
     self._high_res_speed_fonts: dict[str, rl.Font] = {}
-    self._high_res_speed_font_ids: set[int] = set()
+    self._high_res_text_fonts: dict[str, rl.Font] = {}
+    self._high_res_font_ids: set[int] = set()
     self._width = width if width is not None else GuiApplication._default_width()
     self._height = height if height is not None else GuiApplication._default_height()
 
@@ -766,11 +768,30 @@ class GuiApplication(GuiApplicationExt):
       rl.set_texture_filter(font.texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
       self._high_res_speed_fonts[language] = font
       if font.texture.id != 0:
-        self._high_res_speed_font_ids.add(font.texture.id)
+        self._high_res_font_ids.add(font.texture.id)
     return self._high_res_speed_fonts[language]
 
-  def is_high_res_speed_font(self, font: rl.Font) -> bool:
-    return font.texture.id in self._high_res_speed_font_ids
+  def high_res_text_font(self, font_weight: FontWeight = FontWeight.BOLD) -> rl.Font:
+    """ASCII font rasterized near the size used by large offroad headings."""
+    if not multilang.requires_font_fallback():
+      return self._fonts[font_weight]
+
+    language = multilang.language
+    if language not in self._high_res_text_fonts:
+      codepoints = list(range(32, 127))
+      codepoint_buffer = rl.ffi.new("int[]", codepoints)
+      with as_file(FONT_DIR) as fspath:
+        font = rl.load_font_ex((fspath / NOTO_FONTS[language]).as_posix(), HIGH_RES_TEXT_FONT_SIZE,
+                               rl.ffi.cast("int *", codepoint_buffer), len(codepoints))
+      rl.gen_texture_mipmaps(font.texture)
+      rl.set_texture_filter(font.texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
+      self._high_res_text_fonts[language] = font
+      if font.texture.id != 0:
+        self._high_res_font_ids.add(font.texture.id)
+    return self._high_res_text_fonts[language]
+
+  def is_high_res_font(self, font: rl.Font) -> bool:
+    return font.texture.id in self._high_res_font_ids
 
   @property
   def width(self):

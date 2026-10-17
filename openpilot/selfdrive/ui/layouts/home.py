@@ -184,8 +184,8 @@ class HomeLayout(Widget):
 
   def _render_home_content(self):
     # Display banner + logo + welcome text centered in content area (3xl style)
-    font = gui_app.font(FontWeight.BOLD)
-    tag_font = gui_app.font(FontWeight.NORMAL)
+    font = gui_app.high_res_text_font(FontWeight.BOLD)
+    tag_font = gui_app.high_res_text_font(FontWeight.NORMAL)
     text = "Welcome to MR.ONE"
     tagline = "Drive smarter. Arrive safer."
     # 3xl used 100/54; c3xl-dev adds 1.3x CJK scale, so divide by 1.3 to match
