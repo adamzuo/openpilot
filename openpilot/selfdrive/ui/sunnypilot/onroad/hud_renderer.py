@@ -104,9 +104,10 @@ class HudRendererSP(HudRenderer):
     max_str_y = 15 if self.show_icbm_status else 27
 
     max_text = str(round(self.speed_cluster)) if self.show_icbm_status else tr("MAX")
-    max_text_width = measure_text_cached(self._font_semi_bold, max_text, max_str_size).x
+    max_font = self._font_speed if self.show_icbm_status else self._font_semi_bold
+    max_text_width = measure_text_cached(max_font, max_text, max_str_size).x
     rl.draw_text_ex(
-      self._font_semi_bold,
+      max_font,
       max_text,
       rl.Vector2(x + (set_speed_width - max_text_width) / 2, y + max_str_y),
       max_str_size,
@@ -115,9 +116,9 @@ class HudRendererSP(HudRenderer):
     )
 
     set_speed_text = CRUISE_DISABLED_CHAR if not self.is_cruise_set else str(round(self.set_speed))
-    speed_text_width = measure_text_cached(self._font_bold, set_speed_text, FONT_SIZES.set_speed).x
+    speed_text_width = measure_text_cached(self._font_speed, set_speed_text, FONT_SIZES.set_speed).x
     rl.draw_text_ex(
-      self._font_bold,
+      self._font_speed,
       set_speed_text,
       rl.Vector2(x + (set_speed_width - speed_text_width) / 2, y + 77),
       FONT_SIZES.set_speed,

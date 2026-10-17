@@ -102,7 +102,7 @@ NOTO_FONTS = {
   "zh-CHS": "SourceHanSansSC-Bold.otf",
   "zh-CHT": "NotoSansCJKtc-Regular.otf",
 }
-HIGH_RES_SPEED_CHARS = "0123456789.-/ kmhp"
+HIGH_RES_SPEED_CHARS = "0123456789.-–/ kmhp"
 HIGH_RES_SPEED_FONT_SIZE = 280
 
 
