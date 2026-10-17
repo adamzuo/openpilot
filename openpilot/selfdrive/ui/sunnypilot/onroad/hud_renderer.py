@@ -139,7 +139,8 @@ class HudRendererSP(HudRenderer):
 
     self.developer_ui.render(rect)
     self.road_name_renderer.render(rect)
-    self.speed_limit_renderer.render(rect)
+    # speed limit sign hidden on the onroad view (user request)
+    # self.speed_limit_renderer.render(rect)
     self.smart_cruise_control_renderer.render(rect)
     self.turn_signal_controller.render(rect)
     self.circular_alerts_renderer.render(rect)
