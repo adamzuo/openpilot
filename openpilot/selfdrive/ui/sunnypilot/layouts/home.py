@@ -51,18 +51,9 @@ class HomeLayoutSP(HomeLayout):
     version_right = self.header_rect.x + self.header_rect.width
     version_left = version_right - version_text_width
 
-    brand = "sunnypilot"
     description = self.params.get("UpdaterCurrentDescription") or ""
 
-    desc_width = 0
     if description:
       desc_size = measure_text_cached(gui_app.font(FontWeight.NORMAL), description, BRAND_FONT_SIZE)
-      desc_width = desc_size.x
-      desc_rect = rl.Rectangle(version_right - desc_width, self.header_rect.y, desc_width, self.header_rect.height)
+      desc_rect = rl.Rectangle(version_right - desc_size.x, self.header_rect.y, desc_size.x, self.header_rect.height)
       gui_label(desc_rect, description, BRAND_FONT_SIZE, rl.WHITE, alignment=TextAlignment.RIGHT)
-
-    brand_size = measure_text_cached(gui_app.font(FontWeight.AUDIOWIDE), brand, BRAND_FONT_SIZE)
-    spacing = BRAND_DESC_SPACING if description else 0
-    brand_x = version_right - desc_width - spacing - brand_size.x
-    brand_rect = rl.Rectangle(max(version_left, brand_x), self.header_rect.y, brand_size.x, self.header_rect.height)
-    gui_label(brand_rect, brand, BRAND_FONT_SIZE, rl.WHITE, font_weight=FontWeight.AUDIOWIDE)
