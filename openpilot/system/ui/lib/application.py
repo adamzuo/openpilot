@@ -102,6 +102,8 @@ NOTO_FONTS = {
   "zh-CHS": "SourceHanSansSC-Bold.otf",
   "zh-CHT": "NotoSansCJKtc-Regular.otf",
 }
+HIGH_RES_SPEED_CHARS = "0123456789.-/ kmhp"
+HIGH_RES_SPEED_FONT_SIZE = 280
 
 
 class FontWeight(StrEnum):
@@ -132,7 +134,7 @@ class TextAlignmentVertical(IntEnum):
 
 def font_fallback(font: rl.Font) -> rl.Font:
   """Use a Noto fallback for languages not covered by Inter."""
-  if multilang.requires_font_fallback():
+  if multilang.requires_font_fallback() and not gui_app.is_high_res_speed_font(font):
     return gui_app.fallback_font()
   return font
 
@@ -222,6 +224,8 @@ class GuiApplication(GuiApplicationExt):
 
     self._fonts: dict[FontWeight, rl.Font] = {}
     self._fallback_fonts: dict[str, rl.Font] = {}
+    self._high_res_speed_fonts: dict[str, rl.Font] = {}
+    self._high_res_speed_font_ids: set[int] = set()
     self._width = width if width is not None else GuiApplication._default_width()
     self._height = height if height is not None else GuiApplication._default_height()
 
@@ -745,6 +749,28 @@ class GuiApplication(GuiApplicationExt):
       rl.set_texture_filter(font.texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
       self._fallback_fonts[language] = font
     return self._fallback_fonts[language]
+
+  def high_res_speed_font(self) -> rl.Font:
+    """Font subset rasterized near the size used by the onroad speed display."""
+    if not multilang.requires_font_fallback():
+      return self._fonts[FontWeight.BOLD]
+
+    language = multilang.language
+    if language not in self._high_res_speed_fonts:
+      codepoints = sorted(map(ord, HIGH_RES_SPEED_CHARS))
+      codepoint_buffer = rl.ffi.new("int[]", codepoints)
+      with as_file(FONT_DIR) as fspath:
+        font = rl.load_font_ex((fspath / NOTO_FONTS[language]).as_posix(), HIGH_RES_SPEED_FONT_SIZE,
+                               rl.ffi.cast("int *", codepoint_buffer), len(codepoints))
+      rl.gen_texture_mipmaps(font.texture)
+      rl.set_texture_filter(font.texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
+      self._high_res_speed_fonts[language] = font
+      if font.texture.id != 0:
+        self._high_res_speed_font_ids.add(font.texture.id)
+    return self._high_res_speed_fonts[language]
+
+  def is_high_res_speed_font(self, font: rl.Font) -> bool:
+    return font.texture.id in self._high_res_speed_font_ids
 
   @property
   def width(self):
