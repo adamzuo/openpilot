@@ -19,6 +19,8 @@ def checked(fn, msg=None):
   return wrapper
 
 class USB3:
+  _shared_handles: dict[tuple[int, int], "USB3"] = {}
+
   @staticmethod
   @functools.cache
   def ctx():
@@ -38,6 +40,11 @@ class USB3:
     return ret
 
   def __init__(self, dev:c.POINTER[libusb.struct_libusb_device], *args, **kwargs):
+    key = (libusb.libusb_get_bus_number(dev), libusb.libusb_get_device_address(dev))
+    if (shared := USB3._shared_handles.get(key)) is not None:
+      self.__dict__.update(shared.__dict__)
+      return
+
     self._tags, self._transferred = itertools.count(1), ctypes.c_int(0)
     self._bulk_buf, self._bulk_mv = alloc_cbuffer(4 << 20)
     self._ctrl_buf, self._ctrl_mv = alloc_cbuffer(0x1000)
@@ -66,6 +73,7 @@ class USB3:
     checked(libusb.libusb_set_configuration)(self.handle, 1)
     checked(libusb.libusb_claim_interface)(self.handle, 0)
     checked(libusb.libusb_set_interface_alt_setting)(self.handle, 0, 0)
+    USB3._shared_handles[key] = self
 
   def control_write(self, request:int, value:int=0, index:int=0, data:bytes=b'', timeout:int=1000):
     assert len(data) <= len(self._ctrl_mv)
