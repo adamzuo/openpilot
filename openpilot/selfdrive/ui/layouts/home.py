@@ -182,54 +182,83 @@ class HomeLayout(Widget):
                                 version_text_width, self.header_rect.height)
     gui_label(version_rect, self._version_text, 48, rl.WHITE, alignment=TextAlignment.RIGHT)
 
-  def _render_home_content(self):
-    """offroad 首页内容（自定义，已去掉厂商品牌页）
+  # 自定义照片缓存（避免每帧重新加载）
+  _home_photo_cache = {"key": None, "tex": None}
 
-    想改文案：直接改 title / tagline 两个变量
-    想改字号：title_size / tag_size
-    想加自己的图片：把 png 放到 /data/home_logo.png，然后把 HOME_LOGO 设为 True
+  def _render_home_content(self):
+    """offroad 首页：可选自定义照片 + 标题 + 副标题
+
+    放照片：把图片传到设备 /data/home_photo.png（或 .jpg），即可自动显示
+    换照片：覆盖该文件后重启（或改改动就会重新加载）
+    不要照片：删掉该文件即可
+    改文案：改下面 title / tagline
     """
     import os as _os
-    HOME_LOGO = False
-    home_logo_path = "/data/home_logo.png"
 
     font = gui_app.high_res_text_font(FontWeight.BOLD)
     tag_font = gui_app.high_res_text_font(FontWeight.NORMAL)
 
     title = "openpilot"
     tagline = "Ready to drive"
-    title_size = 110
-    tag_size = 46
+    title_size = 100
+    tag_size = 42
     gap = 30
 
     cx = self.content_rect.x + self.content_rect.width / 2
     cy = self.content_rect.y + self.content_rect.height / 2
 
-    ts = measure_text_cached(font, title, title_size)
+    # ---------- 自定义照片 ----------
+    photo_tex = None
+    photo_draw_w = photo_draw_h = 0
+    for path in ("/data/home_photo.png", "/data/home_photo.jpg", "/data/home_photo.jpeg"):
+      if not _os.path.exists(path):
+        continue
+      try:
+        key = (path, _os.path.getmtime(path))
+        if self._home_photo_cache["key"] != key:
+          old = self._home_photo_cache["tex"]
+          if old is not None:
+            try: rl.unload_texture(old)
+            except Exception: pass
+          self._home_photo_cache["tex"] = rl.load_texture(path)
+          self._home_photo_cache["key"] = key
+        photo_tex = self._home_photo_cache["tex"]
+      except Exception:
+        photo_tex = None
+      break
+
+    if photo_tex is not None:
+      # 照片最多占内容区的 45% 高、60% 宽，等比缩放
+      max_w = self.content_rect.width * 0.60
+      max_h = self.content_rect.height * 0.45
+      scale = min(max_w / photo_tex.width, max_h / photo_tex.height, 1.0)
+      photo_draw_w = photo_tex.width * scale
+      photo_draw_h = photo_tex.height * scale
+
+    # ---------- 文案尺寸 ----------
+    ts = measure_text_cached(font, title, title_size) if title else None
     gs = measure_text_cached(tag_font, tagline, tag_size) if tagline else None
 
-    # 可选：自定义图片（放在标题上方）
-    logo_tex = None
-    logo_h = 0
-    if HOME_LOGO and _os.path.exists(home_logo_path):
-      try:
-        logo_tex = rl.load_texture(home_logo_path)
-        logo_h = logo_tex.height + 40
-      except Exception:
-        logo_tex = None
-
-    total = logo_h + ts.y + ((gap + gs.y) if gs else 0)
+    photo_block = (photo_draw_h + 46) if photo_tex is not None else 0
+    text_block = (ts.y if ts else 0) + ((gap + gs.y) if gs else 0)
+    total = photo_block + text_block
     y = int(cy - total / 2)
 
-    if logo_tex is not None:
-      rl.draw_texture_ex(logo_tex, rl.Vector2(int(cx - logo_tex.width / 2), y), 0, 1.0, rl.WHITE)
-      y += logo_h
+    # ---------- 画照片 ----------
+    if photo_tex is not None:
+      rl.draw_texture_ex(photo_tex,
+                         rl.Vector2(int(cx - photo_draw_w / 2), y),
+                         0, scale, rl.WHITE)
+      y = int(y + photo_block)
 
-    # 主标题
-    rl.draw_text_ex(font, title, rl.Vector2(int(cx - ts.x / 2), y), title_size, 0, rl.WHITE)
-    # 副标题
+    # ---------- 画标题 ----------
+    if ts:
+      rl.draw_text_ex(font, title, rl.Vector2(int(cx - ts.x / 2), y), title_size, 0, rl.WHITE)
+      y = int(y + ts.y + gap)
+
+    # ---------- 画副标题 ----------
     if gs:
-      rl.draw_text_ex(tag_font, tagline, rl.Vector2(int(cx - gs.x / 2), int(y + ts.y + gap)),
+      rl.draw_text_ex(tag_font, tagline, rl.Vector2(int(cx - gs.x / 2), y),
                       tag_size, 0, rl.Color(150, 150, 150, 255))
 
   def _render_update_view(self):
