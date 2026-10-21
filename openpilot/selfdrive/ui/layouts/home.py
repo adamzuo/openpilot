@@ -360,16 +360,16 @@ class HomeLayout(Widget):
         continue
       try:
         key = (path, os.path.getmtime(path))
-        if self._photo_cache.get("key") != key:
-          old = self._photo_cache.get("tex")
+        if self._home_photo_cache.get("key") != key:
+          old = self._home_photo_cache.get("tex")
           if old is not None:
             try:
               rl.unload_texture(old)
             except Exception:
               pass
-          self._photo_cache["tex"] = rl.load_texture(path)
-          self._photo_cache["key"] = key
-        return self._photo_cache["tex"]
+          self._home_photo_cache["tex"] = rl.load_texture(path)
+          self._home_photo_cache["key"] = key
+        return self._home_photo_cache["tex"]
       except Exception:
         return None
     return None
