@@ -367,7 +367,13 @@ class HomeLayout(Widget):
               rl.unload_texture(old)
             except Exception:
               pass
-          self._home_photo_cache["tex"] = rl.load_texture(path)
+          img = rl.load_image(path)
+          if img.width > 1920 or img.height > 1080:
+            k = min(1920.0 / img.width, 1080.0 / img.height)
+            rl.image_resize(img, int(img.width * k), int(img.height * k))
+          tex = rl.load_texture_from_image(img)
+          rl.unload_image(img)
+          self._home_photo_cache["tex"] = tex
           self._home_photo_cache["key"] = key
         return self._home_photo_cache["tex"]
       except Exception:
