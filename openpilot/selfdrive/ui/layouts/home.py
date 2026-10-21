@@ -183,50 +183,54 @@ class HomeLayout(Widget):
     gui_label(version_rect, self._version_text, 48, rl.WHITE, alignment=TextAlignment.RIGHT)
 
   def _render_home_content(self):
-    # ★ 已移除厂商品牌页：logo + "Welcome to MR.ONE" + 微信搜一搜 banner
-    # 如需恢复原版：删除下面这行 return 即可
-    return
-    # Display banner + logo + welcome text centered in content area (3xl style)
+    """offroad 首页内容（自定义，已去掉厂商品牌页）
+
+    想改文案：直接改 title / tagline 两个变量
+    想改字号：title_size / tag_size
+    想加自己的图片：把 png 放到 /data/home_logo.png，然后把 HOME_LOGO 设为 True
+    """
+    import os as _os
+    HOME_LOGO = False
+    home_logo_path = "/data/home_logo.png"
+
     font = gui_app.high_res_text_font(FontWeight.BOLD)
     tag_font = gui_app.high_res_text_font(FontWeight.NORMAL)
-    text = "Welcome to MR.ONE"
-    tagline = "Drive smarter. Arrive safer."
-    # 3xl used 100/54; c3xl-dev adds 1.3x CJK scale, so divide by 1.3 to match
-    # title enlarged 1.3x on user request: 77 -> 100
-    font_size = 100
-    tag_font_size = 42
 
-    text_size = measure_text_cached(font, text, font_size)
-    tag_size = measure_text_cached(tag_font, tagline, tag_font_size)
-
-    banner_w = self._home_banner.width
-    banner_h = self._home_banner.height
-    logo_w = self._home_logo.width
-    logo_h = self._home_logo.height
-    gap_b = 40  # banner -> logo
-    gap1 = 50   # logo -> title
-    gap2 = 24   # title -> tagline
+    title = "openpilot"
+    tagline = "Ready to drive"
+    title_size = 110
+    tag_size = 46
+    gap = 30
 
     cx = self.content_rect.x + self.content_rect.width / 2
     cy = self.content_rect.y + self.content_rect.height / 2
 
-    total_h = logo_h + gap1 + text_size.y + gap2 + tag_size.y + gap_b + banner_h
-    start_y = int(cy - total_h / 2)
+    ts = measure_text_cached(font, title, title_size)
+    gs = measure_text_cached(tag_font, tagline, tag_size) if tagline else None
 
-    # Logo
-    rl.draw_texture_ex(self._home_logo, rl.Vector2(int(cx - logo_w / 2), start_y), 0, 1.0, rl.WHITE)
+    # 可选：自定义图片（放在标题上方）
+    logo_tex = None
+    logo_h = 0
+    if HOME_LOGO and _os.path.exists(home_logo_path):
+      try:
+        logo_tex = rl.load_texture(home_logo_path)
+        logo_h = logo_tex.height + 40
+      except Exception:
+        logo_tex = None
 
-    # Title
-    title_y = int(start_y + logo_h + gap1)
-    rl.draw_text_ex(font, text, rl.Vector2(int(cx - text_size.x / 2), title_y), font_size, 0, rl.WHITE)
+    total = logo_h + ts.y + ((gap + gs.y) if gs else 0)
+    y = int(cy - total / 2)
 
-    # Tagline
-    tag_y = int(title_y + text_size.y + gap2)
-    rl.draw_text_ex(tag_font, tagline, rl.Vector2(int(cx - tag_size.x / 2), tag_y), tag_font_size, 0, rl.Color(150, 150, 150, 255))
+    if logo_tex is not None:
+      rl.draw_texture_ex(logo_tex, rl.Vector2(int(cx - logo_tex.width / 2), y), 0, 1.0, rl.WHITE)
+      y += logo_h
 
-    # Banner (bottom)
-    banner_y = int(tag_y + tag_size.y + gap_b)
-    rl.draw_texture_ex(self._home_banner, rl.Vector2(int(cx - banner_w / 2), banner_y), 0, 1.0, rl.WHITE)
+    # 主标题
+    rl.draw_text_ex(font, title, rl.Vector2(int(cx - ts.x / 2), y), title_size, 0, rl.WHITE)
+    # 副标题
+    if gs:
+      rl.draw_text_ex(tag_font, tagline, rl.Vector2(int(cx - gs.x / 2), int(y + ts.y + gap)),
+                      tag_size, 0, rl.Color(150, 150, 150, 255))
 
   def _render_update_view(self):
     self.update_alert.render(self.content_rect)
