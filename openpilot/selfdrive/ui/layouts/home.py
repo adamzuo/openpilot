@@ -185,81 +185,119 @@ class HomeLayout(Widget):
   # 自定义照片缓存（避免每帧重新加载）
   _home_photo_cache = {"key": None, "tex": None}
 
+  # 状态面板缓存（避免每帧读文件）
+  _status_cache = {"t": 0.0, "rows": []}
+
+  def _get_status_rows(self):
+    """收集车辆/设备状态（1 秒缓存）"""
+    import os, time as _t, shutil
+    now = _t.monotonic()
+    if now - self._status_cache["t"] < 1.0 and self._status_cache["rows"]:
+      return self._status_cache["rows"]
+
+    rows = []
+    # 车系（CarParams 里读取，失败则跳过）
+    try:
+      from cereal import car
+      cp = car.CarParams.from_bytes(Params().get("CarParams"))
+      rows.append(("车辆", cp.carFingerprint or "--"))
+      rows.append(("品牌", str(cp.brand) if cp.brand else "--"))
+    except Exception:
+      pass
+
+    # 温度（camera / cpu）
+    try:
+      temps = {}
+      for z in os.listdir("/sys/class/thermal"):
+        if not z.startswith("thermal_zone"):
+          continue
+        with open(f"/sys/class/thermal/{z}/type") as f:
+          name = f.read().strip()
+        with open(f"/sys/class/thermal/{z}/temp") as f:
+          temps[name] = int(f.read().strip()) / 1000.0
+      if "cpu0-gold-usr" in temps:
+        rows.append(("CPU 温度", f"{temps['cpu0-gold-usr']:.0f} °C"))
+      if "camera" in temps:
+        rows.append(("相机温度", f"{temps['camera']:.0f} °C"))
+      if "battery" in temps:
+        rows.append(("电池温度", f"{temps['battery']:.0f} °C"))
+    except Exception:
+      pass
+
+    # 内存
+    try:
+      with open("/proc/meminfo") as f:
+        mem = {l.split(":")[0]: int(l.split()[1]) for l in f if ":" in l}
+      total, avail = mem.get("MemTotal", 1), mem.get("MemAvailable", 0)
+      rows.append(("内存占用", f"{100 - int(avail * 100 / total)} %"))
+    except Exception:
+      pass
+
+    # 存储
+    try:
+      du = shutil.disk_usage("/data")
+      rows.append(("存储空间", f"{du.used / 2**30:.1f} / {du.total / 2**30:.0f} GB"))
+    except Exception:
+      pass
+
+    # 运行时长
+    try:
+      with open("/proc/uptime") as f:
+        up = int(float(f.read().split()[0]))
+      rows.append(("运行时长", f"{up // 3600} 小时 {(up % 3600) // 60} 分"))
+    except Exception:
+      pass
+
+    # IP
+    try:
+      import socket
+      s_ = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      s_.connect(("8.8.8.8", 80))
+      rows.append(("本机 IP", s_.getsockname()[0]))
+      s_.close()
+    except Exception:
+      pass
+
+    # 软件版本
+    try:
+      rows.append(("软件版本", self._get_version_text() or "--"))
+    except Exception:
+      pass
+
+    self._status_cache["t"] = now
+    self._status_cache["rows"] = rows
+    return rows
+
   def _render_home_content(self):
-    """offroad 首页：可选自定义照片 + 标题 + 副标题
-
-    放照片：把图片传到设备 /data/home_photo.png（或 .jpg），即可自动显示
-    换照片：覆盖该文件后重启（或改改动就会重新加载）
-    不要照片：删掉该文件即可
-    改文案：改下面 title / tagline
-    """
-    import os as _os
-
+    """offroad 首页：车辆 / 设备状态面板"""
     font = gui_app.high_res_text_font(FontWeight.BOLD)
-    tag_font = gui_app.high_res_text_font(FontWeight.NORMAL)
+    lab_font = gui_app.high_res_text_font(FontWeight.NORMAL)
 
-    title = "openpilot"
-    tagline = "Ready to drive"
-    title_size = 100
-    tag_size = 42
-    gap = 30
+    rows = self._get_status_rows()
+    title = "车辆状态"
+    title_size = 64
+    label_size = 40
+    value_size = 40
+    row_h = 70
+    label_w = 240
 
     cx = self.content_rect.x + self.content_rect.width / 2
     cy = self.content_rect.y + self.content_rect.height / 2
 
-    # ---------- 自定义照片 ----------
-    photo_tex = None
-    photo_draw_w = photo_draw_h = 0
-    for path in ("/data/home_photo.png", "/data/home_photo.jpg", "/data/home_photo.jpeg"):
-      if not _os.path.exists(path):
-        continue
-      try:
-        key = (path, _os.path.getmtime(path))
-        if self._home_photo_cache["key"] != key:
-          old = self._home_photo_cache["tex"]
-          if old is not None:
-            try: rl.unload_texture(old)
-            except Exception: pass
-          self._home_photo_cache["tex"] = rl.load_texture(path)
-          self._home_photo_cache["key"] = key
-        photo_tex = self._home_photo_cache["tex"]
-      except Exception:
-        photo_tex = None
-      break
+    total_h = title_size + 46 + row_h * max(len(rows), 1)
+    y = int(cy - total_h / 2)
 
-    if photo_tex is not None:
-      # 照片最多占内容区的 45% 高、60% 宽，等比缩放
-      max_w = self.content_rect.width * 0.60
-      max_h = self.content_rect.height * 0.45
-      scale = min(max_w / photo_tex.width, max_h / photo_tex.height, 1.0)
-      photo_draw_w = photo_tex.width * scale
-      photo_draw_h = photo_tex.height * scale
+    ts = measure_text_cached(font, title, title_size)
+    rl.draw_text_ex(font, title, rl.Vector2(int(cx - ts.x / 2), y), title_size, 0, rl.WHITE)
+    y = int(y + title_size + 46)
 
-    # ---------- 文案尺寸 ----------
-    ts = measure_text_cached(font, title, title_size) if title else None
-    gs = measure_text_cached(tag_font, tagline, tag_size) if tagline else None
+    left_x = int(cx - 400)
+    value_x = left_x + label_w
 
-    photo_block = (photo_draw_h + 46) if photo_tex is not None else 0
-    text_block = (ts.y if ts else 0) + ((gap + gs.y) if gs else 0)
-    total = photo_block + text_block
-    y = int(cy - total / 2)
-
-    # ---------- 画照片 ----------
-    if photo_tex is not None:
-      rl.draw_texture_ex(photo_tex,
-                         rl.Vector2(int(cx - photo_draw_w / 2), y),
-                         0, scale, rl.WHITE)
-      y = int(y + photo_block)
-
-    # ---------- 画标题 ----------
-    if ts:
-      rl.draw_text_ex(font, title, rl.Vector2(int(cx - ts.x / 2), y), title_size, 0, rl.WHITE)
-      y = int(y + ts.y + gap)
-
-    # ---------- 画副标题 ----------
-    if gs:
-      rl.draw_text_ex(tag_font, tagline, rl.Vector2(int(cx - gs.x / 2), y),
-                      tag_size, 0, rl.Color(150, 150, 150, 255))
+    for label, value in rows:
+      rl.draw_text_ex(lab_font, label, rl.Vector2(left_x, y), label_size, 0, rl.Color(150, 150, 150, 255))
+      rl.draw_text_ex(lab_font, value, rl.Vector2(value_x, y), value_size, 0, rl.WHITE)
+      y += row_h
 
   def _render_update_view(self):
     self.update_alert.render(self.content_rect)
