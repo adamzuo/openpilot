@@ -315,7 +315,7 @@ class HomeLayout(Widget):
     try:
       with open("/proc/meminfo") as f:
         mem = {l.split(":")[0]: int(l.split()[1]) for l in f if ":" in l}
-      rows.append(("内存占用", f"{100 - int(mem.get('MemAvailable', 0) * 100 / max(mem.get('MemTotal', 1), 1))} %"))
+      rows.append(("内存", f"{100 - int(mem.get('MemAvailable', 0) * 100 / max(mem.get('MemTotal', 1), 1))} %"))
     except Exception:
       pass
     try:
@@ -370,7 +370,8 @@ class HomeLayout(Widget):
       rl.set_texture_filter(font.texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
       self._cjk_font_cache[key] = font
       return font
-    except Exception:
+    except Exception as e:
+      print(f"[home] CJK font load failed: {e}", flush=True)
       return None
 
   def _render_home_content(self):
@@ -390,6 +391,9 @@ class HomeLayout(Widget):
     _all_texts += ["CPU 温度", "相机温度", "电池温度", "内存占用", "存储空间", "运行时长", "本机 IP", "软件版本"]
     _cjk = self._get_cjk_font(_all_texts)
     if _cjk is not None:
+      if getattr(self, "_font_logged", False) is False:
+        print("[home] using dynamic CJK font ✓", flush=True)
+        self._font_logged = True
       font = lab_font = _cjk
     else:
       font = gui_app.font(FontWeight.BOLD)
