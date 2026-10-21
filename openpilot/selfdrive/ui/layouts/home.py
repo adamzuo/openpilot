@@ -353,8 +353,10 @@ class HomeLayout(Widget):
       {"title": "车辆状态", "show_dynamic": true,
        "rows": [["车辆", "TOYOTA RAV4"], ["品牌", "toyota"]]}
     """
-    font = gui_app.high_res_text_font(FontWeight.BOLD)
-    lab_font = gui_app.high_res_text_font(FontWeight.NORMAL)
+    # 注意：high_res 字体是 Inter，没有中文字形（会显示成 "?"）
+    # 用 gui_app.font() 才会在中文语言下自动使用 CJK 回退字体
+    font = gui_app.font(FontWeight.BOLD)
+    lab_font = gui_app.font(FontWeight.NORMAL)
 
     cfg = self._get_home_config()
     title = str(cfg.get("title", "车辆状态"))
