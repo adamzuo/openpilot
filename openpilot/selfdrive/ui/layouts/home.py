@@ -420,7 +420,8 @@ class HomeLayout(Widget):
       except Exception:
         pass
     if _photo is not None:
-      area = self._rect if hasattr(self, "_rect") else self.content_rect
+      # 用「内容区」（顶栏下方）而不是整个布局区，避免遮住右上角版本号
+      area = self.content_rect
       scale = min(area.width / _photo.width, area.height / _photo.height)
       dw, dh = _photo.width * scale, _photo.height * scale
       ax, ay = area.x + (area.width - dw) / 2, area.y + (area.height - dh) / 2
