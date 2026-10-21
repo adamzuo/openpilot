@@ -435,7 +435,19 @@ class HomeLayout(Widget):
       area = self.content_rect
       scale = min(area.width / _photo.width, area.height / _photo.height)
       dw, dh = _photo.width * scale, _photo.height * scale
-      ax, ay = area.x + (area.width - dw) / 2, area.y + (area.height - dh) / 2
+      # 支持水平偏移（网页配置 photo_offset_x：正数=右移，负数=左移）
+      _pcfg = self._get_home_config()
+      try:
+        _ox = float(_pcfg.get("photo_offset_x", 0))
+      except Exception:
+        _ox = 0.0
+      _oy = 0.0
+      try:
+        _oy = float(_pcfg.get("photo_offset_y", 0))
+      except Exception:
+        _oy = 0.0
+      ax = area.x + (area.width - dw) / 2 + _ox
+      ay = area.y + (area.height - dh) / 2 + _oy
       rl.draw_texture_ex(_photo, rl.Vector2(int(ax), int(ay)), 0, scale, rl.WHITE)
       return
 
