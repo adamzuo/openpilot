@@ -349,6 +349,31 @@ class HomeLayout(Widget):
   # 按需生成包含实际字符的 CJK 字体（避免字形缺失显示成 "?"）
   _cjk_font_cache = {}
 
+  # 自定义图片缓存
+  _photo_cache = {"key": None, "tex": None}
+
+  def _get_home_photo(self):
+    """读取 /data/home_photo.png（或 .jpg），文件变化自动重新加载"""
+    import os
+    for path in ("/data/home_photo.png", "/data/home_photo.jpg", "/data/home_photo.jpeg"):
+      if not os.path.exists(path):
+        continue
+      try:
+        key = (path, os.path.getmtime(path))
+        if self._photo_cache.get("key") != key:
+          old = self._photo_cache.get("tex")
+          if old is not None:
+            try:
+              rl.unload_texture(old)
+            except Exception:
+              pass
+          self._photo_cache["tex"] = rl.load_texture(path)
+          self._photo_cache["key"] = key
+        return self._photo_cache["tex"]
+      except Exception:
+        return None
+    return None
+
   def _get_cjk_font(self, texts, base_size=48):
     import hashlib
     from pathlib import Path
