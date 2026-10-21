@@ -183,6 +183,9 @@ class HomeLayout(Widget):
     gui_label(version_rect, self._version_text, 48, rl.WHITE, alignment=TextAlignment.RIGHT)
 
   def _render_home_content(self):
+    # ★ 已移除厂商品牌页：logo + "Welcome to MR.ONE" + 微信搜一搜 banner
+    # 如需恢复原版：删除下面这行 return 即可
+    return
     # Display banner + logo + welcome text centered in content area (3xl style)
     font = gui_app.high_res_text_font(FontWeight.BOLD)
     tag_font = gui_app.high_res_text_font(FontWeight.NORMAL)
