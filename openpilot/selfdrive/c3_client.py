@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import random
+import ssl
 import struct
 import subprocess
 import sys
@@ -42,10 +43,11 @@ class _WebSocketClient:
 
   def __init__(self, url, ping_interval=20, ping_timeout=15):
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("ws",):
+    if parsed.scheme not in ("ws", "wss"):
       raise ValueError(f"不支持的协议: {parsed.scheme}")
+    self.tls = parsed.scheme == "wss"
     self.host = parsed.hostname
-    self.port = parsed.port or 80
+    self.port = parsed.port or (443 if self.tls else 80)
     self.path = parsed.path or "/"
     if parsed.query:
       self.path += "?" + parsed.query
@@ -61,8 +63,10 @@ class _WebSocketClient:
   async def connect(self):
     """建立 TCP + WebSocket 握手"""
     try:
+      ssl_ctx = ssl.create_default_context() if self.tls else None
       self._reader, self._writer = await asyncio.wait_for(
-        asyncio.open_connection(self.host, self.port), timeout=10
+        asyncio.open_connection(self.host, self.port, ssl=ssl_ctx,
+                                server_hostname=self.host if self.tls else None), timeout=10
       )
 
       # 生成 Sec-WebSocket-Key
@@ -270,7 +274,16 @@ class _WebSocketClient:
 
 
 # ================= 配置 =================
-SERVER_URL = "ws://1.15.136.221:8500"
+SERVER_URL = os.getenv("C3_DIRECTOR_URL", "ws://172.16.52.107:8500/ws")
+# token 不放仓库（仓库是公开的 ✗），改读设备本地文件
+_TOKEN_FILE = "/data/c3_director_token"
+if "token=" not in SERVER_URL and os.path.exists(_TOKEN_FILE):
+  try:
+    _tok = open(_TOKEN_FILE, encoding="utf-8").read().strip()
+    if _tok:
+      SERVER_URL += ("&" if "?" in SERVER_URL else "?") + "token=" + _tok
+  except Exception:
+    pass
 HEARTBEAT_INTERVAL = 5
 RECONNECT_DELAY = 1
 
