@@ -380,6 +380,7 @@ class HomeLayout(Widget):
       {"title": "车辆状态", "show_dynamic": true,
        "rows": [["车辆", "TOYOTA RAV4"], ["品牌", "toyota"]]}
     """
+    cfg = self._get_home_config()
     # 注意：high_res 字体是 Inter，没有中文字形（会显示成 "?"）
     # 用按需字体：把实际要显示的字符都加载进去，任何中文都能显示
     _all_texts = [str(cfg.get("title", "车辆状态"))]
@@ -394,7 +395,6 @@ class HomeLayout(Widget):
       font = gui_app.font(FontWeight.BOLD)
       lab_font = gui_app.font(FontWeight.NORMAL)
 
-    cfg = self._get_home_config()
     title = str(cfg.get("title", "车辆状态"))
     show_dynamic = bool(cfg.get("show_dynamic", True))
 
