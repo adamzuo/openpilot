@@ -198,7 +198,10 @@ class HomeLayout(Widget):
     rows = []
     # 车系（CarParams 里读取，失败则跳过）
     try:
-      from cereal import car
+      try:
+        from openpilot.cereal import car
+      except Exception:
+        from cereal import car
       cp = car.CarParams.from_bytes(Params().get("CarParams"))
       rows.append(("车辆", cp.carFingerprint or "--"))
       rows.append(("品牌", str(cp.brand) if cp.brand else "--"))
