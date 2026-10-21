@@ -271,18 +271,113 @@ class HomeLayout(Widget):
     self._status_cache["rows"] = rows
     return rows
 
+  # 首页配置缓存（网页端修改 /data/home_config.json 后自动生效）
+  _home_cfg_cache = {"key": None, "cfg": {}}
+
+  def _get_home_config(self):
+    import os, json
+    path = "/data/home_config.json"
+    try:
+      key = os.path.getmtime(path) if os.path.exists(path) else None
+      if key != self._home_cfg_cache["key"]:
+        cfg = {}
+        if key is not None:
+          with open(path, encoding="utf-8") as f:
+            cfg = json.load(f)
+        self._home_cfg_cache["key"] = key
+        self._home_cfg_cache["cfg"] = cfg if isinstance(cfg, dict) else {}
+      return self._home_cfg_cache["cfg"]
+    except Exception:
+      return {}
+
+  def _get_dynamic_rows(self):
+    """动态状态（温度/内存/存储/时长/IP/版本），1 秒缓存"""
+    import os, time as _t, shutil
+    now = _t.monotonic()
+    if now - self._status_cache["t"] < 1.0 and self._status_cache["rows"]:
+      return self._status_cache["rows"]
+
+    rows = []
+    try:
+      temps = {}
+      for z in os.listdir("/sys/class/thermal"):
+        if not z.startswith("thermal_zone"):
+          continue
+        with open(f"/sys/class/thermal/{z}/type") as f:
+          name = f.read().strip()
+        with open(f"/sys/class/thermal/{z}/temp") as f:
+          temps[name] = int(f.read().strip()) / 1000.0
+      for k, lbl in (("cpu0-gold-usr", "CPU 温度"), ("camera", "相机温度"), ("battery", "电池温度")):
+        if k in temps:
+          rows.append((lbl, f"{temps[k]:.0f} °C"))
+    except Exception:
+      pass
+    try:
+      with open("/proc/meminfo") as f:
+        mem = {l.split(":")[0]: int(l.split()[1]) for l in f if ":" in l}
+      rows.append(("内存占用", f"{100 - int(mem.get('MemAvailable', 0) * 100 / max(mem.get('MemTotal', 1), 1))} %"))
+    except Exception:
+      pass
+    try:
+      du = shutil.disk_usage("/data")
+      rows.append(("存储空间", f"{du.used / 2**30:.1f} / {du.total / 2**30:.0f} GB"))
+    except Exception:
+      pass
+    try:
+      with open("/proc/uptime") as f:
+        up = int(float(f.read().split()[0]))
+      rows.append(("运行时长", f"{up // 3600} 小时 {(up % 3600) // 60} 分"))
+    except Exception:
+      pass
+    try:
+      import socket
+      s_ = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      s_.connect(("8.8.8.8", 80))
+      rows.append(("本机 IP", s_.getsockname()[0]))
+      s_.close()
+    except Exception:
+      pass
+    try:
+      rows.append(("软件版本", self._get_version_text() or "--"))
+    except Exception:
+      pass
+
+    self._status_cache["t"] = now
+    self._status_cache["rows"] = rows
+    return rows
+
   def _render_home_content(self):
-    """offroad 首页：车辆 / 设备状态面板"""
+    """offroad 首页：配置来自 /data/home_config.json（网页端可改）
+
+    配置格式：
+      {"title": "车辆状态", "show_dynamic": true,
+       "rows": [["车辆", "TOYOTA RAV4"], ["品牌", "toyota"]]}
+    """
     font = gui_app.high_res_text_font(FontWeight.BOLD)
     lab_font = gui_app.high_res_text_font(FontWeight.NORMAL)
 
-    rows = self._get_status_rows()
-    title = "车辆状态"
-    title_size = 64
-    label_size = 40
-    value_size = 40
-    row_h = 70
-    label_w = 240
+    cfg = self._get_home_config()
+    title = str(cfg.get("title", "车辆状态"))
+    show_dynamic = bool(cfg.get("show_dynamic", True))
+
+    rows = []
+    for r in cfg.get("rows", []):
+      try:
+        if isinstance(r, (list, tuple)) and len(r) >= 2:
+          rows.append((str(r[0]), str(r[1])))
+        elif isinstance(r, str):
+          rows.append((r, ""))
+      except Exception:
+        pass
+    if show_dynamic:
+      rows.extend(self._get_dynamic_rows())
+
+    title_size = int(cfg.get("title_size", 64))
+    label_size = int(cfg.get("label_size", 40))
+    value_size = int(cfg.get("value_size", 40))
+    row_h = int(cfg.get("row_h", 70))
+    label_w = int(cfg.get("label_w", 240))
+    offset_x = int(cfg.get("offset_x", -400))
 
     cx = self.content_rect.x + self.content_rect.width / 2
     cy = self.content_rect.y + self.content_rect.height / 2
@@ -294,12 +389,12 @@ class HomeLayout(Widget):
     rl.draw_text_ex(font, title, rl.Vector2(int(cx - ts.x / 2), y), title_size, 0, rl.WHITE)
     y = int(y + title_size + 46)
 
-    left_x = int(cx - 400)
+    left_x = int(cx + offset_x)
     value_x = left_x + label_w
-
     for label, value in rows:
       rl.draw_text_ex(lab_font, label, rl.Vector2(left_x, y), label_size, 0, rl.Color(150, 150, 150, 255))
-      rl.draw_text_ex(lab_font, value, rl.Vector2(value_x, y), value_size, 0, rl.WHITE)
+      if value:
+        rl.draw_text_ex(lab_font, value, rl.Vector2(value_x, y), value_size, 0, rl.WHITE)
       y += row_h
 
   def _render_update_view(self):
