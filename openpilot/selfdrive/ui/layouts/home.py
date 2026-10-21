@@ -372,7 +372,11 @@ class HomeLayout(Widget):
           self._home_photo_cache["key"] = key
         return self._home_photo_cache["tex"]
       except Exception as e:
-        print(f"[home] photo load failed: {e}", flush=True)
+        try:
+          from openpilot.common.swaglog import cloudlog
+          cloudlog.error(f"[home] photo load failed: {e}")
+        except Exception:
+          print(f"[home] photo load failed: {e}", flush=True)
         return None
     return None
 
@@ -408,6 +412,13 @@ class HomeLayout(Widget):
     """
     # ---------- 图片模式：铺满整个首页区域，不显示文字 ----------
     _photo = self._get_home_photo()
+    if getattr(self, "_photo_logged_key", None) != str(self._home_photo_cache.get("key")):
+      self._photo_logged_key = str(self._home_photo_cache.get("key"))
+      try:
+        from openpilot.common.swaglog import cloudlog
+        cloudlog.error(f"[home] photo branch: tex={'YES' if _photo is not None else 'NONE'}, key={self._home_photo_cache.get('key')}")
+      except Exception:
+        pass
     if _photo is not None:
       area = self._rect if hasattr(self, "_rect") else self.content_rect
       scale = min(area.width / _photo.width, area.height / _photo.height)
