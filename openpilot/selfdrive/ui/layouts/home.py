@@ -410,6 +410,17 @@ class HomeLayout(Widget):
        - 有 /data/home_photo.* → 图片铺满（不显示任何文字）
        - 无图片 → 显示文字状态面板
     """
+    # 每 2 秒让 raylib 截一张图到 /tmp/screenshot.png
+    # （设备上没有 screencap/scrot，也没有 /dev/fb0，只能由 UI 自己截）
+    try:
+      import time as _t
+      _now = _t.monotonic()
+      if _now - getattr(self, "_last_shot_ts", 0.0) > 2.0:
+        self._last_shot_ts = _now
+        rl.take_screenshot("/tmp/screenshot.png")
+    except Exception:
+      pass
+
     # ---------- 图片模式：铺满整个首页区域，不显示文字 ----------
     _photo = self._get_home_photo()
     if getattr(self, "_photo_logged_key", None) != str(self._home_photo_cache.get("key")):
