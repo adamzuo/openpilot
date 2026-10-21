@@ -226,7 +226,7 @@ class Sidebar(Widget, SidebarSP):
     text_pos = rl.Vector2(rect.x + 58, text_y)
     # IP 地址显示已移除（过长），恢复显示网络类型（如 WiFi / LTE）
     _ = ip  # 保留 _get_ip() 调用，但不显示
-    rl.draw_text_ex(self._font_regular, tr(self._net_type), text_pos, FONT_SIZE, 0, Colors.WHITE)
+    # 网络类型文字（WiFi/LTE）也已移除，只保留信号圆点
 
   def _draw_metrics(self, rect: rl.Rectangle):
     if gui_app.sunnypilot_ui():
