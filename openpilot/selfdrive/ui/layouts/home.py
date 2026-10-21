@@ -503,7 +503,16 @@ class HomeLayout(Widget):
     for label, value in rows:
       rl.draw_text_ex(lab_font, label, rl.Vector2(left_x, y), label_size, 0, rl.Color(150, 150, 150, 255))
       if value:
-        rl.draw_text_ex(lab_font, value, rl.Vector2(value_x, y), value_size, 0, rl.WHITE)
+        # 数值宽度超过「标签列宽」时自动缩小字号（如 IP 地址过长）
+        vs = value_size
+        try:
+          tw = measure_text_cached(lab_font, value, vs)
+          tw_x = tw.x if hasattr(tw, "x") else float(tw)
+          if tw_x > label_w and tw_x > 0:
+            vs = max(18, int(vs * label_w / tw_x))
+        except Exception:
+          pass
+        rl.draw_text_ex(lab_font, value, rl.Vector2(value_x, y), vs, 0, rl.WHITE)
       y += row_h
 
   def _render_update_view(self):
