@@ -346,6 +346,33 @@ class HomeLayout(Widget):
     self._status_cache["rows"] = rows
     return rows
 
+  # 按需生成包含实际字符的 CJK 字体（避免字形缺失显示成 "?"）
+  _cjk_font_cache = {}
+
+  def _get_cjk_font(self, texts, base_size=48):
+    import hashlib
+    from pathlib import Path
+    chars = set(chr(c) for c in range(32, 127))
+    for t in texts:
+      if t:
+        chars.update(str(t))
+    key = hashlib.md5("".join(sorted(chars)).encode("utf-8")).hexdigest()[:10]
+    if key in self._cjk_font_cache:
+      return self._cjk_font_cache[key]
+    try:
+      path = Path("/data/openpilot/openpilot/selfdrive/assets/fonts/SourceHanSansSC-Bold.otf")
+      if not path.exists():
+        return None
+      cps = sorted({ord(c) for c in chars if ord(c) > 0})
+      buf = rl.ffi.new("int[]", cps)
+      font = rl.load_font_ex(str(path), base_size, rl.ffi.cast("int *", buf), len(cps))
+      rl.gen_texture_mipmaps(font.texture)
+      rl.set_texture_filter(font.texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
+      self._cjk_font_cache[key] = font
+      return font
+    except Exception:
+      return None
+
   def _render_home_content(self):
     """offroad 首页：配置来自 /data/home_config.json（网页端可改）
 
@@ -354,9 +381,18 @@ class HomeLayout(Widget):
        "rows": [["车辆", "TOYOTA RAV4"], ["品牌", "toyota"]]}
     """
     # 注意：high_res 字体是 Inter，没有中文字形（会显示成 "?"）
-    # 用 gui_app.font() 才会在中文语言下自动使用 CJK 回退字体
-    font = gui_app.font(FontWeight.BOLD)
-    lab_font = gui_app.font(FontWeight.NORMAL)
+    # 用按需字体：把实际要显示的字符都加载进去，任何中文都能显示
+    _all_texts = [str(cfg.get("title", "车辆状态"))]
+    for r in cfg.get("rows", []):
+      if isinstance(r, (list, tuple)) and len(r) >= 2:
+        _all_texts += [str(r[0]), str(r[1])]
+    _all_texts += ["CPU 温度", "相机温度", "电池温度", "内存占用", "存储空间", "运行时长", "本机 IP", "软件版本"]
+    _cjk = self._get_cjk_font(_all_texts)
+    if _cjk is not None:
+      font = lab_font = _cjk
+    else:
+      font = gui_app.font(FontWeight.BOLD)
+      lab_font = gui_app.font(FontWeight.NORMAL)
 
     cfg = self._get_home_config()
     title = str(cfg.get("title", "车辆状态"))
