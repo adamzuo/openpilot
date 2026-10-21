@@ -274,9 +274,17 @@ class _WebSocketClient:
 
 
 # ================= 配置 =================
-SERVER_URL = os.getenv("C3_DIRECTOR_URL", "ws://121.33.75.98:8500/ws")
-# token 不放仓库（仓库是公开的 ✗），改读设备本地文件
+# 服务地址和 token 都不放仓库（仓库是公开的 ✗），改读设备本地文件
+_URL_FILE = "/data/c3_director_url"
 _TOKEN_FILE = "/data/c3_director_token"
+SERVER_URL = os.getenv("C3_DIRECTOR_URL", "")
+if not SERVER_URL and os.path.exists(_URL_FILE):
+  try:
+    SERVER_URL = open(_URL_FILE, encoding="utf-8").read().strip()
+  except Exception:
+    SERVER_URL = ""
+if not SERVER_URL:
+  SERVER_URL = "ws://127.0.0.1:8500/ws"   # 占位：实际地址由 /data/c3_director_url 提供
 if "token=" not in SERVER_URL and os.path.exists(_TOKEN_FILE):
   try:
     _tok = open(_TOKEN_FILE, encoding="utf-8").read().strip()
