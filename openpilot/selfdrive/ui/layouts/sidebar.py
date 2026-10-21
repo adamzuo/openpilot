@@ -225,7 +225,7 @@ class Sidebar(Widget, SidebarSP):
     text_y = rect.y + 247
     text_pos = rl.Vector2(rect.x + 58, text_y)
     # IP 地址可能较长（如 192.168.103.134），自动缩小字号适配侧边栏宽度
-    max_w = rect.width - 58 - 8
+    max_w = rect.width - 58
     if ip:
       ip_size = FONT_SIZE
       try:
