@@ -224,8 +224,17 @@ class Sidebar(Widget, SidebarSP):
     ip = self._get_ip()
     text_y = rect.y + 247
     text_pos = rl.Vector2(rect.x + 58, text_y)
+    # IP 地址可能较长（如 192.168.103.134），自动缩小字号适配侧边栏宽度
+    max_w = rect.width - 58 - 8
     if ip:
-      rl.draw_text_ex(self._font_regular, ip, text_pos, FONT_SIZE, 0, Colors.WHITE)
+      ip_size = FONT_SIZE
+      try:
+        tw = rl.measure_text(ip, ip_size)
+        if tw > max_w and tw > 0:
+          ip_size = max(10, int(ip_size * max_w / tw))
+      except Exception:
+        pass
+      rl.draw_text_ex(self._font_regular, ip, text_pos, ip_size, 0, Colors.WHITE)
     else:
       rl.draw_text_ex(self._font_regular, tr(self._net_type), text_pos, FONT_SIZE, 0, Colors.WHITE)
 
