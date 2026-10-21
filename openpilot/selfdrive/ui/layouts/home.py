@@ -400,6 +400,20 @@ class HomeLayout(Widget):
       return None
 
   def _render_home_content(self):
+    """offroad 首页：
+       - 有 /data/home_photo.* → 图片铺满（不显示任何文字）
+       - 无图片 → 显示文字状态面板
+    """
+    # ---------- 图片模式：铺满整个首页区域，不显示文字 ----------
+    _photo = self._get_home_photo()
+    if _photo is not None:
+      area = self._rect if hasattr(self, "_rect") else self.content_rect
+      scale = min(area.width / _photo.width, area.height / _photo.height)
+      dw, dh = _photo.width * scale, _photo.height * scale
+      ax, ay = area.x + (area.width - dw) / 2, area.y + (area.height - dh) / 2
+      rl.draw_texture_ex(_photo, rl.Vector2(int(ax), int(ay)), 0, scale, rl.WHITE)
+      return
+
     """offroad 首页：配置来自 /data/home_config.json（网页端可改）
 
     配置格式：
