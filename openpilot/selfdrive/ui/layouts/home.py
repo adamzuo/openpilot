@@ -353,7 +353,12 @@ class HomeLayout(Widget):
   _photo_cache = {"key": None, "tex": None}
 
   def _get_home_photo(self):
-    """读取 /data/home_photo.png（或 .jpg），文件变化自动重新加载"""
+    """读取 /data/home_photo.* 并返回纹理
+
+    使用 gui_app.texture() —— 厂商自己的 logo 就用这个 API（安全 ✓）
+    内部会做 keep_aspect_ratio 缩放 + 缓存，不会有显存问题
+    注意：换图后需要重启 comma 服务（texture 有内部缓存）
+    """
     import os
     for path in ("/data/home_photo.png", "/data/home_photo.jpg", "/data/home_photo.jpeg"):
       if not os.path.exists(path):
@@ -361,22 +366,13 @@ class HomeLayout(Widget):
       try:
         key = (path, os.path.getmtime(path))
         if self._home_photo_cache.get("key") != key:
-          old = self._home_photo_cache.get("tex")
-          if old is not None:
-            try:
-              rl.unload_texture(old)
-            except Exception:
-              pass
-          img = rl.load_image(path)
-          if img.width > 1920 or img.height > 1080:
-            k = min(1920.0 / img.width, 1080.0 / img.height)
-            rl.image_resize(img, int(img.width * k), int(img.height * k))
-          tex = rl.load_texture_from_image(img)
-          rl.unload_image(img)
+          # 关键：用 gui_app.texture（厂商验证过的安全加载方式）
+          tex = gui_app.texture(path, 1920, 1080, keep_aspect_ratio=True)
           self._home_photo_cache["tex"] = tex
           self._home_photo_cache["key"] = key
         return self._home_photo_cache["tex"]
-      except Exception:
+      except Exception as e:
+        print(f"[home] photo load failed: {e}", flush=True)
         return None
     return None
 
