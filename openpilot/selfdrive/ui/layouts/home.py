@@ -424,11 +424,25 @@ class HomeLayout(Widget):
     cx = self.content_rect.x + self.content_rect.width / 2
     cy = self.content_rect.y + self.content_rect.height / 2
 
-    total_h = title_size + 46 + row_h * max(len(rows), 1)
+    _ph = 0.0
+    _pt = self._get_home_photo()
+    if _pt is not None:
+      _ph = min(self.content_rect.height * 0.32, _pt.height) + 30
+    total_h = _ph + title_size + 46 + row_h * max(len(rows), 1)
     y = int(cy - total_h / 2)
 
     left_x = int(cx + offset_x)
     value_x = left_x + label_w
+
+    # 自定义图片（/data/home_photo.png），放在标题上方
+    photo_tex = self._get_home_photo()
+    if photo_tex is not None:
+      max_w = self.content_rect.width * 0.50
+      max_h = self.content_rect.height * 0.32
+      scale = min(max_w / photo_tex.width, max_h / photo_tex.height, 1.0)
+      dw, dh = photo_tex.width * scale, photo_tex.height * scale
+      rl.draw_texture_ex(photo_tex, rl.Vector2(int(cx - dw / 2), y), 0, scale, rl.WHITE)
+      y = int(y + dh + 30)
 
     # 标题与自定义行左对齐（原来居中，会看起来错位）
     rl.draw_text_ex(font, title, rl.Vector2(left_x, y), title_size, 0, rl.WHITE)
