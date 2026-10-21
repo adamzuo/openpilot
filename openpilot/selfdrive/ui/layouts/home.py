@@ -387,12 +387,12 @@ class HomeLayout(Widget):
     total_h = title_size + 46 + row_h * max(len(rows), 1)
     y = int(cy - total_h / 2)
 
-    ts = measure_text_cached(font, title, title_size)
-    rl.draw_text_ex(font, title, rl.Vector2(int(cx - ts.x / 2), y), title_size, 0, rl.WHITE)
-    y = int(y + title_size + 46)
-
     left_x = int(cx + offset_x)
     value_x = left_x + label_w
+
+    # 标题与自定义行左对齐（原来居中，会看起来错位）
+    rl.draw_text_ex(font, title, rl.Vector2(left_x, y), title_size, 0, rl.WHITE)
+    y = int(y + title_size + 46)
     for label, value in rows:
       rl.draw_text_ex(lab_font, label, rl.Vector2(left_x, y), label_size, 0, rl.Color(150, 150, 150, 255))
       if value:
