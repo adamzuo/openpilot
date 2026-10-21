@@ -106,3 +106,17 @@ SKILL.md
 !.idea/customTargets.xml
 !.idea/tools/*
 !.run/*
+
+# ===== C3 敏感配置（绝不提交 ✗）=====
+c3_director_token
+c3_director_url
+home_config.json
+home_photo.*
+*.tgz
+
+# ===== 本地脚本/备份 =====
+c3-token-rotate.sh
+c3xl-*/
+dp-*/
+c3-config-*/
+.DS_Store
