@@ -31,6 +31,10 @@ class ScreenSaverSP(Widget):
     self.color = rl.color_from_hsv(self._hue, 1, 1)
 
     self.text = "sunnypilot"
+    # 屏保图片（存在则优先显示图片，否则显示漂动的文字）
+    self._photo_path = os.getenv("SCREENSAVER_PHOTO", "/data/screensaver_photo.png")
+    self._tex = None
+    self._tex_tried = False
     self.font_size = 50 if self._is_mici else 200
     self._start_time = None
     self._dismiss = False
@@ -65,10 +69,25 @@ class ScreenSaverSP(Widget):
   def _update_state(self):
     super()._update_state()
 
-    self.font = gui_app.font(FontWeight.AUDIOWIDE)
-    text_size = measure_text_cached(self.font, self.text, self.font_size, 0)
-    self.logo_width = text_size.x
-    self.logo_height = text_size.y
+    # 优先尝试加载屏保图片
+    if not self._tex_tried:
+      self._tex_tried = True
+      try:
+        if os.path.exists(self._photo_path):
+          # 高度与文字一致（约 230px），宽度等比缩放 ✓
+          _target_h = 230 if not self._is_mici else 60
+          self._tex = gui_app.texture(self._photo_path, gui_app.width, _target_h, keep_aspect_ratio=True)
+      except Exception:
+        self._tex = None
+
+    if self._tex is not None and self._tex.width > 0:
+      self.logo_width = float(self._tex.width)
+      self.logo_height = float(self._tex.height)
+    else:
+      self.font = gui_app.font(FontWeight.AUDIOWIDE)
+      text_size = measure_text_cached(self.font, self.text, self.font_size, 0)
+      self.logo_width = text_size.x
+      self.logo_height = text_size.y
 
     if self._start_time and time.monotonic() - self._start_time > self._screensaver_timeout:
       self._dismiss = True
@@ -114,5 +133,9 @@ class ScreenSaverSP(Widget):
   def _render(self, rect: rl.Rectangle):
     self.set_rect(rect)
     rl.clear_background(rl.BLACK)
-    rl.draw_text_ex(self.font, self.text, rl.Vector2(int(self.x), int(self.y)), self.font_size, 0, self.color)
+    if self._tex is not None and self._tex.width > 0:
+      # 画图片（保留弹跳移动 ✓ 不染色 ✓）
+      rl.draw_texture(self._tex, int(self.x), int(self.y), rl.WHITE)
+    else:
+      rl.draw_text_ex(self.font, self.text, rl.Vector2(int(self.x), int(self.y)), self.font_size, 0, self.color)
     return -1
