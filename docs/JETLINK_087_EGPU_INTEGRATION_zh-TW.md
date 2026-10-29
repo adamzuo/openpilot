@@ -1,5 +1,7 @@
 # eGPU v5.2 修復版 + Jetlink 0.8.7 整合
 
+> ⚠️ 本文件是 **jetlink 0.8.7 時期**的整合紀錄，保留作為歷史對照；目前已升級到 **0.8.10**，請以 `docs/JETLINK_PORT_zh-TW.md`（v13）為準。
+
 底版：本次已修復的 eGPU v5.2（不含 cluster）。Jetlink 來源：提供的 openpilot-dp0111pre-jetlink-v12.zip，程式版本為 0.8.7。
 
 ## 整合內容
