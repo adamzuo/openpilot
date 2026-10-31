@@ -1,0 +1,14 @@
+branch=dpegpu01
+commit=44c9fc301af1b9e1a4959a0d772fbe07f464d557
+remote=https://github.com/adamzuo/openpilot.git
+agnos=18.4
+python=Python 3.12.3
+panda_fw=DEV-cb724806-DEBUG
+--- params 关键项 ---
+JetlinkLink=2
+JetlinkBigModel={"ref": "e4acf619d4eb8b726fc405c264109310ac2951df", "display
+LongitudinalPersonality=0
+dp_lon_traffic_stop=1
+dp_lon_traffic_stop_distance_adjust_m=-2
+dp_lon_apm=1
+AccelPersonality=0

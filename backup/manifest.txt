@@ -1,0 +1,17 @@
+hostname = comma-e48565d6
+branch   = dpegpu01
+commit   = 44c9fc301af1b9e1a4959a0d772fbe07f464d557
+subj     = Refactor blind spot detection logic in carstate.py
+agnos    = 18.4
+modelref = DEFAULT_BIG_MODEL_REF = 'bf3e3631b3f91d92a1020a5e0dd4298b93ff4244
+dongle   = 477e2c61e7f6734a
+--- git status（本地改动）---
+params_count = 122
+dp_params    = 53
+calib_md5    = d4061854fdf148873b549285e7c5de8a
+jetlink_link = 2
+personality  = 0
+traffic_stop = 1
+distance_adj = -2
+apm          = 1
+accel_pers   = 0
