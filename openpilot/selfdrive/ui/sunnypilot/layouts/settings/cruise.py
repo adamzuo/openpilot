@@ -62,6 +62,7 @@ class CruiseLayout(Widget):
       description=tr("0=Factory (far), 1=P1 mild, 2=P2 aggressive, 3=P3 balanced. Restart openpilot after changing."),
       param="C3XLFollowProfile",
       min_value=0, max_value=3, value_change_step=1,
+      label_callback=lambda v: {0: "原厂(远)", 1: "温和", 2: "激进", 3: "折中"}.get(int(v), str(v)),
       inline=True)
 
     self.custom_acc_toggle = toggle_item_sp(
