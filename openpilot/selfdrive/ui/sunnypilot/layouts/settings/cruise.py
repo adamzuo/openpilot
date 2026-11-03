@@ -57,6 +57,13 @@ class CruiseLayout(Widget):
       description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlMap")
 
+    self.c3xl_follow_profile = option_item_sp(
+      title=tr("C3XL Follow Distance Profile"),
+      description=tr("0=Factory (far), 1=P1 mild, 2=P2 aggressive, 3=P3 balanced. Restart openpilot after changing."),
+      param="C3XLFollowProfile",
+      min_value=0, max_value=3, value_change_step=1,
+      inline=True)
+
     self.custom_acc_toggle = toggle_item_sp(
       title=tr("Custom ACC Speed Increments"),
       description="",

@@ -18,7 +18,8 @@ class ToyotaFlagsSP(IntFlag):
 
 
 # kiBP, kiV for the PCM accel PID with TSS2_SMOOTH
-TSS2_SMOOTH_KI = ([0., 3., 5., 10., 25., 36.], [0.46, 0.46, 0.31, 0.22, 0.20, 0.19])
+# C3XL: <=80 km/h 保持积极(0.25)，>80 km/h 平缓降到 0.219
+TSS2_SMOOTH_KI = ([0., 10., 22.2, 27.8, 36.], [0.25, 0.25, 0.25, 0.219, 0.219])
 
 
 class ToyotaSafetyFlagsSP:
