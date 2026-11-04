@@ -131,16 +131,15 @@ class CruiseLayout(Widget):
       description="",
       param="IntelligentCruiseButtonManagement")
 
-    self.c3xl_accel_comp = ListItemSP(
+    # label_width = 90 + 重启按钮宽(150) + 间隔(20) → [−] 与 CFD 行对齐，[+] 顶到最右侧
+    self.c3xl_accel_comp = option_item_sp(
       title=tr("C3XL Big-Model Accel"),
       description=tr("0=factory (gas press only), 1=mild 0.2/16s, 2=standard 0.3/10s, 3=strong 0.5/8s. 行车中也可调。"),
-      action_item=CFDSpaceControlSP(
-        "C3XLAccelComp", 0, 3, 1,
-        True,
-        label_width=90,
-        label_callback=lambda v: {0: "原厂", 1: "温和", 2: "标准", 3: "强"}.get(int(v), str(v)),
-      ),
-    )
+      param="C3XLAccelComp",
+      min_value=0, max_value=3, value_change_step=1,
+      label_width=260,
+      label_callback=lambda v: {0: "原厂", 1: "温和", 2: "标准", 3: "强"}.get(int(v), str(v)),
+      inline=True)
 
     self.scc_v_toggle = toggle_item_sp(
       title=tr("Smart Cruise Control - Vision"),
