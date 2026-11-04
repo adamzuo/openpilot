@@ -54,7 +54,6 @@ class CruiseLayout(Widget):
       param="C3XLAccelComp",
       min_value=0, max_value=3, value_change_step=1,
       label_callback=lambda v: {0: "原厂", 1: "温和", 2: "标准", 3: "强"}.get(int(v), str(v)),
-      enabled=lambda: ui_state.is_offroad(),
       inline=True)
 
     self.c3xl_apply_button = simple_button_item_sp(
@@ -116,8 +115,8 @@ class CruiseLayout(Widget):
       self.custom_acc_long_increment,
       self.sla_settings_button,
       self.c3xl_follow_profile,
-      self.c3xl_accel_comp,
       self.c3xl_apply_button,
+      self.c3xl_accel_comp,
     ]
     return items
 
