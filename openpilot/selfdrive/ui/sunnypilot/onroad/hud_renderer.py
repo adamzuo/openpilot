@@ -131,6 +131,33 @@ class HudRendererSP(HudRenderer):
   def _draw_current_speed(self, rect: rl.Rectangle) -> None:
     self.speed_renderer.render(rect)
 
+
+  def _draw_gpu_status(self, rect: rl.Rectangle) -> None:
+    """C3XL: 驾驶页右上角的大模型(GPU)状态徽标。
+    绿=就绪  黄=等待手机/加载中  红=故障/未编译  灰=未连接"""
+    jl = getattr(ui_state, 'jetlink', None)
+    present = bool(jl is not None and getattr(jl, 'present', False))
+    st = str(getattr(ui_state, 'chestnut_state', ''))
+    if present:
+      if 'FAILED' in st or 'UNCOMPILED' in st:
+        color, label = rl.Color(0xF0, 0x50, 0x50, 0xFF), tr("GPU FAULT")
+      elif 'DISCONNECTED' in st or 'LOADING' in st:
+        color, label = rl.Color(0xF0, 0xB0, 0x30, 0xFF), tr("GPU WAIT")
+      else:
+        color, label = rl.Color(0x30, 0xC8, 0x60, 0xFF), tr("GPU")
+    else:
+      color, label = rl.Color(0x90, 0x90, 0x90, 0xFF), tr("GPU OFF")
+
+    fs, pad, dot, h = 24, 12, 9.0, 38
+    tw = measure_text_cached(self._font_semi_bold, label, fs).x
+    w = tw + dot + pad * 3
+    x = rect.x + rect.width - w - 24
+    y = rect.y + 20
+    rl.draw_rectangle_rounded(rl.Rectangle(x, y, w, h), 0.5, 10, rl.Color(0, 0, 0, 120))
+    rl.draw_circle(int(x + pad + dot / 2), int(y + h / 2), dot, color)
+    rl.draw_text_ex(self._font_semi_bold, label,
+                    rl.Vector2(x + pad + dot + pad, y + (h - fs) / 2 - 2), fs, 0, color)
+
   def _render(self, rect: rl.Rectangle) -> None:
     super()._render(rect)
 
@@ -148,3 +175,4 @@ class HudRendererSP(HudRenderer):
     self.circular_alerts_renderer.render(rect)
     self.rocket_fuel.render(rect, ui_state.sm)
     self.traffic_control_renderer.render(rect)
+    self._draw_gpu_status(rect)
