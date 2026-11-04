@@ -10,10 +10,40 @@ from enum import IntEnum
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed_limit_settings import SpeedLimitSettingsLayout
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr, tr_noop
-from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, option_item_sp, simple_button_item_sp
+import pyray as rl
+
+from openpilot.system.ui.sunnypilot.widgets.list_view import ListItemSP, toggle_item_sp, option_item_sp, simple_button_item_sp
+from openpilot.system.ui.sunnypilot.widgets.option_control import OptionControlSP
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 
+
+
+class CFDApplyControlSP(OptionControlSP):
+  """C3XL: 跟车档位控件；左侧内嵌「重启」按钮，使档位与重启在同一行"""
+  RESTART_W = 128
+  RESTART_GAP = 10
+
+  def __init__(self, *args, on_restart=None, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._on_restart = on_restart
+    self._restart_rect = None
+
+  def _render(self, rect):
+    super()._render(rect)
+    if getattr(self, "container_rect", None) is None:
+      return
+    r = rl.Rectangle(self.container_rect.x - self.RESTART_W - self.RESTART_GAP, self.container_rect.y,
+                     self.RESTART_W, self.container_rect.height)
+    self._restart_rect = r
+    self._render_button(r, tr("重启"), self.enabled)
+
+  def _handle_mouse_release(self, mouse_pos):
+    if self._restart_rect is not None and rl.check_collision_point_rec(mouse_pos, self._restart_rect):
+      if self.enabled and callable(self._on_restart):
+        self._on_restart()
+      return
+    super()._handle_mouse_release(mouse_pos)
 
 class PanelType(IntEnum):
   CRUISE = 0
@@ -56,12 +86,6 @@ class CruiseLayout(Widget):
       label_callback=lambda v: {0: "原厂", 1: "温和", 2: "标准", 3: "强"}.get(int(v), str(v)),
       inline=True)
 
-    self.c3xl_apply_button = simple_button_item_sp(
-      button_text=lambda: tr("Apply & Restart"),
-      callback=self._apply_follow_profile,
-      enabled=lambda: ui_state.is_offroad(),
-    )
-
     self.scc_v_toggle = toggle_item_sp(
       title=tr("Smart Cruise Control - Vision"),
       description=tr("Use vision path predictions to estimate the appropriate speed to drive through turns ahead."),
@@ -72,14 +96,17 @@ class CruiseLayout(Widget):
       description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlMap")
 
-    self.c3xl_follow_profile = option_item_sp(
-      title=tr("C3XL Follow Distance Profile"),
-      description=tr("0=Factory (far), 1=mild, 2=aggressive, 3=balanced. Parked only; openpilot restarts automatically."),
-      param="C3XLFollowProfile",
-      min_value=0, max_value=3, value_change_step=1,
-      label_callback=lambda v: {0: "原厂(远)", 1: "温和", 2: "激进", 3: "折中"}.get(int(v), str(v)),
-      enabled=lambda: ui_state.is_offroad(),
-      inline=True)
+    self.c3xl_follow_profile = ListItemSP(
+      title=tr("CFD"),
+      description=tr("CFD = C3XL Follow Distance Profile. 原厂(远)/温和/激进/折中；仅停车可改；点左侧「重启」应用并重启 openpilot。"),
+      action_item=CFDApplyControlSP(
+        "C3XLFollowProfile", 0, 3, 1,
+        lambda: ui_state.is_offroad(),
+        label_width=90,
+        label_callback=lambda v: {0: "原厂", 1: "温和", 2: "激进", 3: "折中"}.get(int(v), str(v)),
+        on_restart=self._apply_follow_profile,
+      ),
+    )
 
     self.custom_acc_toggle = toggle_item_sp(
       title=tr("Custom ACC Speed Increments"),
@@ -115,7 +142,6 @@ class CruiseLayout(Widget):
       self.custom_acc_long_increment,
       self.sla_settings_button,
       self.c3xl_follow_profile,
-      self.c3xl_apply_button,
       self.c3xl_accel_comp,
     ]
     return items
