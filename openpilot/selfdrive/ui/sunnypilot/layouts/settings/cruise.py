@@ -10,19 +10,23 @@ from enum import IntEnum
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed_limit_settings import SpeedLimitSettingsLayout
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr, tr_noop
+from openpilot.system.ui.lib.text_measure import measure_text_cached
 import pyray as rl
 
 from openpilot.system.ui.sunnypilot.widgets.list_view import ListItemSP, toggle_item_sp, option_item_sp, simple_button_item_sp
-from openpilot.system.ui.sunnypilot.widgets.option_control import OptionControlSP
+from openpilot.system.ui.sunnypilot.widgets.option_control import (
+  BUTTON_WIDTH, BUTTON_HEIGHT, BUTTON_SPACING, CONTAINER_PADDING, BUTTON_FONT_SIZE, OptionControlSP,
+)
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.scroller_tici import Scroller
+from openpilot.system.ui.sunnypilot.lib.styles import style
 
 
 
 class CFDApplyControlSP(OptionControlSP):
-  """C3XL: 跟车档位控件；左侧内嵌「重启」按钮，使档位与重启在同一行"""
-  RESTART_W = 128
-  RESTART_GAP = 10
+  """C3XL: CFD 行控件 = [−][值][+] 后面直接跟一个真正的「重启」按钮（整行一个控件）"""
+  RESTART_W = 150
+  RESTART_GAP = 20
 
   def __init__(self, *args, on_restart=None, **kwargs):
     super().__init__(*args, **kwargs)
@@ -30,13 +34,54 @@ class CFDApplyControlSP(OptionControlSP):
     self._restart_rect = None
 
   def _render(self, rect):
-    super()._render(rect)
-    if getattr(self, "container_rect", None) is None:
+    if self._rect.width == 0 or self._rect.height == 0 or not self.is_visible:
       return
-    r = rl.Rectangle(self.container_rect.x - self.RESTART_W - self.RESTART_GAP, self.container_rect.y,
-                     self.RESTART_W, self.container_rect.height)
-    self._restart_rect = r
-    self._render_button(r, tr("重启"), self.enabled)
+
+    control_width = (BUTTON_WIDTH * 2) + self.label_width + (BUTTON_SPACING * 2)
+    total_width = control_width + (CONTAINER_PADDING * 2)
+    full_width = total_width + self.RESTART_GAP + self.RESTART_W
+    self._rect.width = full_width
+
+    start_x = self._rect.x + self._rect.width - full_width
+    component_y = rect.y + (rect.height - BUTTON_HEIGHT) / 2
+
+    # — 档位容器 [ −  值  + ] —
+    self.container_rect = rl.Rectangle(start_x, component_y, total_width, BUTTON_HEIGHT)
+    rl.draw_rectangle_rounded(self.container_rect, 0.2, 20, style.OPTION_CONTROL_CONTAINER_BG)
+
+    self.minus_btn_rect = rl.Rectangle(start_x, component_y, BUTTON_WIDTH + CONTAINER_PADDING, BUTTON_HEIGHT)
+    label_x = start_x + CONTAINER_PADDING + BUTTON_WIDTH + BUTTON_SPACING
+    self.label_rect = rl.Rectangle(label_x, component_y, self.label_width, BUTTON_HEIGHT)
+    plus_x = label_x + self.label_width + BUTTON_SPACING
+    self.plus_btn_rect = rl.Rectangle(plus_x, component_y, BUTTON_WIDTH + CONTAINER_PADDING, BUTTON_HEIGHT)
+
+    self._minus_enabled = self.enabled and self.current_value > self.min_value
+    self._plus_enabled = self.enabled and self.current_value < self.max_value
+    self._render_button(self.minus_btn_rect, "-", self._minus_enabled)
+    self._render_value_label()
+    self._render_button(self.plus_btn_rect, "+", self._plus_enabled)
+
+    # — 重启按钮（最右，带背景/边框，像真按钮）—
+    self._restart_rect = rl.Rectangle(start_x + total_width + self.RESTART_GAP, component_y,
+                                      self.RESTART_W, BUTTON_HEIGHT)
+    self._render_restart_button()
+
+  def _render_restart_button(self):
+    r = self._restart_rect
+    if r is None:
+      return
+    mouse_pos = rl.get_mouse_position()
+    pressed = (self.enabled and rl.check_collision_point_rec(mouse_pos, r) and self._touch_valid()
+               and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT))
+    bg = style.OPTION_CONTROL_BTN_PRESSED if pressed else style.OPTION_CONTROL_CONTAINER_BG
+    rl.draw_rectangle_rounded(r, 0.2, 20, bg)
+    rl.draw_rectangle_rounded_lines_ex(r, 0.2, 20, 3, style.ITEM_TEXT_COLOR if self.enabled else style.ITEM_DISABLED_TEXT_COLOR)
+    label = tr("重启")
+    text_color = style.ITEM_TEXT_COLOR if self.enabled else style.ITEM_DISABLED_TEXT_COLOR
+    size = measure_text_cached(self._font, label, BUTTON_FONT_SIZE)
+    rl.draw_text_ex(self._font, label,
+                    rl.Vector2(r.x + (r.width - size.x) / 2, r.y + (r.height - size.y) / 2),
+                    BUTTON_FONT_SIZE, 0, text_color)
 
   def _handle_mouse_release(self, mouse_pos):
     if self._restart_rect is not None and rl.check_collision_point_rec(mouse_pos, self._restart_rect):
