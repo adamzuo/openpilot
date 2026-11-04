@@ -48,6 +48,15 @@ class CruiseLayout(Widget):
       description="",
       param="IntelligentCruiseButtonManagement")
 
+    self.c3xl_accel_comp = option_item_sp(
+      title=tr("C3XL Big-Model Accel"),
+      description=tr("0=factory (gas press only), 1=mild 0.2/16s, 2=standard 0.3/10s, 3=strong 0.5/8s."),
+      param="C3XLAccelComp",
+      min_value=0, max_value=3, value_change_step=1,
+      label_callback=lambda v: {0: "原厂", 1: "温和", 2: "标准", 3: "强"}.get(int(v), str(v)),
+      enabled=lambda: ui_state.is_offroad(),
+      inline=True)
+
     self.c3xl_apply_button = simple_button_item_sp(
       button_text=lambda: tr("Apply & Restart"),
       callback=self._apply_follow_profile,
@@ -107,6 +116,7 @@ class CruiseLayout(Widget):
       self.custom_acc_long_increment,
       self.sla_settings_button,
       self.c3xl_follow_profile,
+      self.c3xl_accel_comp,
       self.c3xl_apply_button,
     ]
     return items
