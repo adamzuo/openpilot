@@ -30,7 +30,9 @@ def iscar(started: bool, params: Params, CP: car.CarParams) -> bool:
 
 def logging(started: bool, params: Params, CP: car.CarParams) -> bool:
   run = (not CP.notCar) or not params.get_bool("DisableLogging")
-  return started and run
+  # C3XL: 本机 started 恒为 False（panda ignitionCan=False / faultTemp），
+  # 导致 loggerd 从不启动、行车无 rlog。改为不依赖 started。
+  return run
 
 def ublox_available() -> bool:
   return os.path.exists('/dev/ttyHS0') and not os.path.exists('/persist/comma/use-quectel-gps')
