@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import threading
 from enum import IntEnum
 
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed_limit_settings import SpeedLimitSettingsLayout
@@ -59,10 +60,12 @@ class CruiseLayout(Widget):
 
     self.c3xl_follow_profile = option_item_sp(
       title=tr("C3XL Follow Distance Profile"),
-      description=tr("0=Factory (far), 1=P1 mild, 2=P2 aggressive, 3=P3 balanced. Restart openpilot after changing."),
+      description=tr("0=Factory (far), 1=mild, 2=aggressive, 3=balanced. Parked only; openpilot restarts automatically."),
       param="C3XLFollowProfile",
       min_value=0, max_value=3, value_change_step=1,
       label_callback=lambda v: {0: "原厂(远)", 1: "温和", 2: "激进", 3: "折中"}.get(int(v), str(v)),
+      enabled=lambda: ui_state.is_offroad(),
+      on_value_changed=self._on_follow_profile_changed,
       inline=True)
 
     self.custom_acc_toggle = toggle_item_sp(
@@ -101,6 +104,24 @@ class CruiseLayout(Widget):
       self.c3xl_follow_profile,
     ]
     return items
+
+
+  def _on_follow_profile_changed(self, value: int) -> None:
+    """C3XL: 改完跟车档位后防抖 6 秒自动重启 openpilot（行车中忽略）"""
+    if not ui_state.is_offroad():
+      return
+    if getattr(self, "_follow_restart_timer", None) is not None:
+      self._follow_restart_timer.cancel()
+    self._follow_restart_timer = threading.Timer(6.0, self._restart_openpilot)
+    self._follow_restart_timer.daemon = True
+    self._follow_restart_timer.start()
+
+  def _restart_openpilot(self) -> None:
+    import subprocess
+    try:
+      subprocess.Popen(["sudo", "-n", "systemctl", "restart", "comma"])
+    except Exception:
+      pass
 
   def _render(self, rect):
     if self._current_panel == PanelType.SLA:
