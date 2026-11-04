@@ -40,10 +40,10 @@ class HudRendererSP(HudRenderer):
     self.traffic_control_renderer = TrafficControlRenderer()
     self._torque_bar = TorqueBar(scale=3.0, always=True)
     # C3XL: 复用首页的 eGPU/chestnut 状态图标（缩小版）
-    self._gpu_green = gui_app.texture("icons_mici/chestnut_green.png", 96, 71)
-    self._gpu_default = gui_app.texture("icons_mici/chestnut.png", 96, 71)
-    self._gpu_orange = gui_app.texture("icons_mici/chestnut_orange.png", 96, 71)
-    self._gpu_off = gui_app.texture("icons_mici/egpu_offline.png", 96, 71)
+    self._gpu_green = gui_app.texture("icons_mici/chestnut_green.png", 180, 133)
+    self._gpu_default = gui_app.texture("icons_mici/chestnut.png", 180, 133)
+    self._gpu_orange = gui_app.texture("icons_mici/chestnut_orange.png", 180, 133)
+    self._gpu_off = gui_app.texture("icons_mici/egpu_offline.png", 180, 133)
 
     self.pcm_cruise_speed: bool = True
     self.show_icbm_status: bool = False
