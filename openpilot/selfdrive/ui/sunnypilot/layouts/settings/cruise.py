@@ -48,6 +48,12 @@ class CruiseLayout(Widget):
       description="",
       param="IntelligentCruiseButtonManagement")
 
+    self.c3xl_apply_button = simple_button_item_sp(
+      button_text=lambda: tr("Apply & Restart"),
+      callback=self._apply_follow_profile,
+      enabled=lambda: ui_state.is_offroad(),
+    )
+
     self.scc_v_toggle = toggle_item_sp(
       title=tr("Smart Cruise Control - Vision"),
       description=tr("Use vision path predictions to estimate the appropriate speed to drive through turns ahead."),
@@ -65,7 +71,6 @@ class CruiseLayout(Widget):
       min_value=0, max_value=3, value_change_step=1,
       label_callback=lambda v: {0: "原厂(远)", 1: "温和", 2: "激进", 3: "折中"}.get(int(v), str(v)),
       enabled=lambda: ui_state.is_offroad(),
-      on_value_changed=self._on_follow_profile_changed,
       inline=True)
 
     self.custom_acc_toggle = toggle_item_sp(
@@ -102,19 +107,16 @@ class CruiseLayout(Widget):
       self.custom_acc_long_increment,
       self.sla_settings_button,
       self.c3xl_follow_profile,
+      self.c3xl_apply_button,
     ]
     return items
 
 
-  def _on_follow_profile_changed(self, value: int) -> None:
-    """C3XL: 改完跟车档位后防抖 6 秒自动重启 openpilot（行车中忽略）"""
+  def _apply_follow_profile(self) -> None:
+    """C3XL: 手动应用跟车档位 → 重启 openpilot（仅停车可用）"""
     if not ui_state.is_offroad():
       return
-    if getattr(self, "_follow_restart_timer", None) is not None:
-      self._follow_restart_timer.cancel()
-    self._follow_restart_timer = threading.Timer(6.0, self._restart_openpilot)
-    self._follow_restart_timer.daemon = True
-    self._follow_restart_timer.start()
+    self._restart_openpilot()
 
   def _restart_openpilot(self) -> None:
     import subprocess
