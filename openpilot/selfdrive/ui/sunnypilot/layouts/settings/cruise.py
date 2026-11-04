@@ -33,6 +33,8 @@ class CFDApplyControlSP(OptionControlSP):
     self._on_restart = on_restart
     self._restart_rect = None
 
+  SHOW_RESTART = True
+
   def _render(self, rect):
     if self._rect.width == 0 or self._rect.height == 0 or not self.is_visible:
       return
@@ -64,7 +66,8 @@ class CFDApplyControlSP(OptionControlSP):
     # — 重启按钮（最右，带背景/边框，像真按钮）—
     self._restart_rect = rl.Rectangle(start_x + total_width + self.RESTART_GAP, component_y,
                                       self.RESTART_W, BUTTON_HEIGHT)
-    self._render_restart_button()
+    if self.SHOW_RESTART:
+      self._render_restart_button()
 
   def _render_restart_button(self):
     r = self._restart_rect
@@ -89,6 +92,11 @@ class CFDApplyControlSP(OptionControlSP):
         self._on_restart()
       return
     super()._handle_mouse_release(mouse_pos)
+
+class CFDSpaceControlSP(CFDApplyControlSP):
+  """与 CFD 行同宽但不画重启按钮 → 让上下两行的 [−][值][+] 对齐"""
+  SHOW_RESTART = False
+
 
 class PanelType(IntEnum):
   CRUISE = 0
@@ -123,13 +131,16 @@ class CruiseLayout(Widget):
       description="",
       param="IntelligentCruiseButtonManagement")
 
-    self.c3xl_accel_comp = option_item_sp(
+    self.c3xl_accel_comp = ListItemSP(
       title=tr("C3XL Big-Model Accel"),
-      description=tr("0=factory (gas press only), 1=mild 0.2/16s, 2=standard 0.3/10s, 3=strong 0.5/8s."),
-      param="C3XLAccelComp",
-      min_value=0, max_value=3, value_change_step=1,
-      label_callback=lambda v: {0: "原厂", 1: "温和", 2: "标准", 3: "强"}.get(int(v), str(v)),
-      inline=True)
+      description=tr("0=factory (gas press only), 1=mild 0.2/16s, 2=standard 0.3/10s, 3=strong 0.5/8s. 行车中也可调。"),
+      action_item=CFDSpaceControlSP(
+        "C3XLAccelComp", 0, 3, 1,
+        True,
+        label_width=90,
+        label_callback=lambda v: {0: "原厂", 1: "温和", 2: "标准", 3: "强"}.get(int(v), str(v)),
+      ),
+    )
 
     self.scc_v_toggle = toggle_item_sp(
       title=tr("Smart Cruise Control - Vision"),
