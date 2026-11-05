@@ -24,9 +24,43 @@ A_CRUISE_T = 2 # target acceleration time horizon
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
 
+
+# C3XL: 超速（松油门后速度高于定速）处理模式
+#   0 = 原厂：立刻以 -0.5 m/s² 拉回定速（顿挫明显）
+#   1 = 滑行优先：超速 5 km/h 内完全滑行；再多则温和减速（上限 -0.25）
+#   2 = 极温和：同上但上限 -0.15
+_OVERRUN_CACHE = {"t": 0.0, "mode": 1}
+
+
+def _overrun_mode() -> int:
+  import time
+  now = time.monotonic()
+  if now - _OVERRUN_CACHE["t"] > 1.0:
+    _OVERRUN_CACHE["t"] = now
+    try:
+      from openpilot.common.params import Params
+      v = Params().get("C3XLOverrun", return_default=True)
+      _OVERRUN_CACHE["mode"] = int(v) if v not in (None, "") else 1
+    except Exception:
+      _OVERRUN_CACHE["mode"] = 1
+  m = _OVERRUN_CACHE["mode"]
+  return m if m in (0, 1, 2) else 1
+
 def get_cruise_accel(v_cruise, v_ego, a_cruise_prev, dt):
-  target_accel = np.clip((v_cruise - v_ego) / A_CRUISE_T, A_CRUISE_MIN, ACCEL_MAX)
-  j_cruise = np.interp(v_ego, J_CRUISE_BP, J_CRUISE_VALS)
+  mode = _overrun_mode()
+  over_kmh = (v_ego - v_cruise) * 3.6
+  if mode == 0:
+    target_accel = np.clip((v_cruise - v_ego) / A_CRUISE_T, A_CRUISE_MIN, ACCEL_MAX)
+    jerk_scale = 1.0
+  else:
+    # C3XL: 超速时滑行优先，避免松油门瞬间的刹车顿挫
+    cap = 0.25 if mode == 1 else 0.15
+    if over_kmh <= 5.0:
+      target_accel = 0.0                      # 完全滑行（不主动刹车）
+    else:
+      target_accel = -min(cap, 0.03 * (over_kmh - 5.0))
+    jerk_scale = 0.4 if mode == 1 else 0.25   # 进入减速更柔和
+  j_cruise = np.interp(v_ego, J_CRUISE_BP, J_CRUISE_VALS) * jerk_scale
   target_accel = float(np.clip(target_accel, a_cruise_prev - j_cruise * dt, a_cruise_prev + j_cruise * dt))
 
   return target_accel
