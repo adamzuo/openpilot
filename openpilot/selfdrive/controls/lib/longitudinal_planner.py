@@ -55,11 +55,16 @@ def get_cruise_accel(v_cruise, v_ego, a_cruise_prev, dt):
   else:
     # C3XL: 超速时滑行优先，避免松油门瞬间的刹车顿挫
     cap = 0.25 if mode == 1 else 0.15
-    if over_kmh <= 5.0:
-      target_accel = 0.0                      # 完全滑行（不主动刹车）
+    if over_kmh <= 0.0:
+      # 低于/等于定速：正常加速回到定速（不能是 0，否则定速巡航失效）
+      target_accel = np.clip((v_cruise - v_ego) / A_CRUISE_T, A_CRUISE_MIN, ACCEL_MAX)
+      jerk_scale = 1.0
+    elif over_kmh <= 5.0:
+      target_accel = 0.0                      # 轻微超速：完全滑行（不主动刹车）
+      jerk_scale = 0.4 if mode == 1 else 0.25
     else:
       target_accel = -min(cap, 0.03 * (over_kmh - 5.0))
-    jerk_scale = 0.4 if mode == 1 else 0.25   # 进入减速更柔和
+      jerk_scale = 0.4 if mode == 1 else 0.25
   j_cruise = np.interp(v_ego, J_CRUISE_BP, J_CRUISE_VALS) * jerk_scale
   target_accel = float(np.clip(target_accel, a_cruise_prev - j_cruise * dt, a_cruise_prev + j_cruise * dt))
 
