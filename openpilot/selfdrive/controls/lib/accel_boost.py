@@ -9,6 +9,8 @@ ACCEL_BOOST_MAX = 0.2
 ACCEL_BOOST_RATE = 0.025
 ACCEL_BOOST_PER_OVERRIDE = 0.05
 ACCEL_BOOST_MIN_SPEED = 10 * CV.MPH_TO_MS
+# C3XL: 模型 e2e 加速度低于此值（在要求刹车）时，补偿才衰减；否则保持
+ACCEL_BOOST_DECAY_E2E = -0.3
 
 # C3XL: 大模型加速补偿档位 (名称, 上限 m/s², 爬升速度 m/s²/s, 是否自动, 回落速度)
 C3XL_PROFILES = {
@@ -59,10 +61,13 @@ class AccelBoost:
     if not enabled:
       self.total_boost = 0.0
     elif auto:
-      # C3XL: 检测到被大模型压住就自动缓慢爬升；解除限制后缓慢回落（无阶跃 ✓）
+      # C3XL: 三态（避免补偿被反复清零，又不削弱刹车）
+      #   ① 被大模型压住（需要加速）→ 缓慢爬升
+      #   ② 模型在要求刹车（e2e 很负）→ 缓慢衰减
+      #   ③ 其它（稳态跟车）→ 保持不动
       if model_limited and v_ego > ACCEL_BOOST_MIN_SPEED:
         self.total_boost = min(boost_max, self.total_boost + ramp_up * DT_MDL)
-      else:
+      elif output_a_target_e2e < ACCEL_BOOST_DECAY_E2E:
         self.total_boost = max(0.0, self.total_boost - ramp_down * DT_MDL)
     elif gas_pressed and self.boost_eligible:
       increase = min(ACCEL_BOOST_RATE * DT_MDL * speed_scale,
