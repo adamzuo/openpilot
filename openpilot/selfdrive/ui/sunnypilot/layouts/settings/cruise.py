@@ -141,14 +141,10 @@ class CruiseLayout(Widget):
       label_callback=lambda v: {0: "原厂", 1: "滑行优先", 2: "极温和"}.get(int(v), str(v)),
       inline=True)
 
-    self.c3xl_accel_comp = option_item_sp(
-      title=tr("C3XL Big-Model Accel"),
-      description=tr("0=factory (gas press only), 1=mild 0.2/16s, 2=standard 0.3/10s, 3=strong 0.5/8s. 行车中也可调。"),
-      param="C3XLAccelComp",
-      min_value=0, max_value=3, value_change_step=1,
-      label_width=260,
-      label_callback=lambda v: {0: "原厂", 1: "温和", 2: "标准", 3: "强"}.get(int(v), str(v)),
-      inline=True)
+    self.accel_boost_toggle = toggle_item_sp(
+      title=tr("Accel Boost"),
+      description=tr("Adds a small push on top of sunnypilot's own acceleration. Eases off in curves and when slowing or stopping. Never exceeds your set speed."),
+      param="AccelBoostSP")
 
     self.scc_v_toggle = toggle_item_sp(
       title=tr("Smart Cruise Control - Vision"),
@@ -206,7 +202,7 @@ class CruiseLayout(Widget):
       self.custom_acc_long_increment,
       self.sla_settings_button,
       self.c3xl_follow_profile,
-      self.c3xl_accel_comp,
+      self.accel_boost_toggle,
       self.c3xl_overrun,
     ]
     return items
