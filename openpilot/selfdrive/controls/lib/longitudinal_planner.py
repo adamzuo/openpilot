@@ -9,7 +9,8 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.accel_boost import AccelBoost
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource, \
+  get_safe_obstacle_distance, get_T_FOLLOW
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan, should_stop
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
@@ -156,6 +157,17 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     over_kmh = (v_ego - v_cruise) * 3.6
     if _overrun_mode() > 0 and over_kmh > 0.0:
       output_a_target_e2e = max(output_a_target_e2e, self.a_cruise)
+
+    # C3XL: 前车足够远（> 目标距离 1.05 倍）且模型只是轻微收油（-0.5~0）时，
+    # 忽略模型的这点负加速度 —— 否则隔着 40~50 m 也会"带一点刹车"。
+    lead = sm['radarState'].leadOne
+    if lead.present and not output_should_stop_e2e:
+      try:
+        desired = get_safe_obstacle_distance(v_ego, get_T_FOLLOW(sm['selfdriveState'].personality))
+        if lead.dRel > desired * 1.05 and -0.5 < output_a_target_e2e < 0.0:
+          output_a_target_e2e = 0.0
+      except Exception:
+        pass
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop),
