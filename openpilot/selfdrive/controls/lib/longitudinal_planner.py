@@ -151,6 +151,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     output_a_target_e2e = self.accel_boost.update(sm, output_a_target_e2e, output_a_target_mpc, self.a_cruise)
 
+    # C3XL: 超速滑行中（Overrun>0 且实际车速高于定速）时，模型的保守加速度不再参与，
+    # 否则 min() 会取模型的负加速度 → 松油门瞬间出现很强的刹车顿挫。
+    over_kmh = (v_ego - v_cruise) * 3.6
+    if _overrun_mode() > 0 and over_kmh > 0.0:
+      output_a_target_e2e = max(output_a_target_e2e, self.a_cruise)
+
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop),
                   (output_a_target_e2e, LongitudinalPlanSource.e2e, output_should_stop_e2e)]
