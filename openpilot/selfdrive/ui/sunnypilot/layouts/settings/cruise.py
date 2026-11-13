@@ -163,7 +163,7 @@ class CruiseLayout(Widget):
         "C3XLFollowProfile", 0, 3, 1,
         lambda: ui_state.is_offroad(),
         label_width=90,
-        label_callback=lambda v: {0: "原厂", 1: "温和", 2: "激进", 3: "折中"}.get(int(v), str(v)),
+        label_callback=lambda v: {0: "原厂", 1: "温和", 2: "激进", 3: "折中", 4: "A紧", 5: "B更紧", 6: "C折中"}.get(int(v), str(v)),
         on_restart=self._apply_follow_profile,
       ),
     )
@@ -184,7 +184,7 @@ class CruiseLayout(Widget):
       title=tr("Long Press Increment"),
       param="CustomAccLongPressIncrement",
       value_map={1: 1, 2: 5, 3: 10},
-      min_value=1, max_value=3, value_change_step=1,
+      min_value=1, max_value=6, value_change_step=1,
       inline=True)
 
     self.sla_settings_button = simple_button_item_sp(

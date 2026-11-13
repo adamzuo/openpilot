@@ -85,10 +85,12 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
     raise NotImplementedError("Longitudinal personality not supported")
 
 def get_stopped_equivalence_factor(v_lead):
-  return (v_lead**2) / (2 * COMFORT_BRAKE)
+  # C3XL: 实时读档位（CFD 切换后立即生效，不用重启）
+  return (v_lead**2) / (2 * c3xl_follow.comfort_brake())
 
 def get_safe_obstacle_distance(v_ego, t_follow):
-  return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
+  # C3XL: 实时读档位（CFD 切换后立即生效，不用重启）
+  return (v_ego**2) / (2 * c3xl_follow.comfort_brake()) + t_follow * v_ego + c3xl_follow.stop_distance()
 
 def gen_long_model():
   model = AcadosModel()
