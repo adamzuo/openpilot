@@ -40,10 +40,33 @@ def name() -> str:
   return PROFILES[_index()][0]
 
 
-def t_follow_override():
-  """Non-None 时覆盖 openpilot 原厂的时距（档位 0 用原厂值）"""
+# C3XL 20261114: 时距随车速放大（低速保持紧凑，高速自动拉开）
+#   v(km/h):   0      40     80     120
+_T_SPEED_BP = [0.0, 11.1, 22.2, 33.3]
+_T_SPEED_F  = [1.00, 1.00, 1.55, 2.33]
+# 高速保底：车速 > 80km/h 时，实际时距不小于这个值（紧档也不会贴太近）
+T_HIGH_SPEED_MIN = 1.50
+T_HIGH_SPEED_KNEE = 22.2      # m/s = 80 km/h
+
+
+def _speed_factor(v_ego: float) -> float:
+  import numpy as np
+  return float(np.interp(v_ego, _T_SPEED_BP, _T_SPEED_F))
+
+
+def t_follow_override(v_ego=None):
+  """Non-None 时覆盖 openpilot 原厂的时距（档位 0 用原厂值）
+  传入 v_ego 时按车速放大，并在高速段做保底"""
   i = _index()
-  return None if i == 0 else PROFILES[i][1]
+  if i == 0:
+    return None
+  t = PROFILES[i][1]
+  if v_ego is None:
+    return t
+  t *= _speed_factor(v_ego)
+  if v_ego > T_HIGH_SPEED_KNEE:
+    t = max(t, T_HIGH_SPEED_MIN)
+  return t
 
 
 def stop_distance() -> float:

@@ -163,13 +163,14 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     lead = sm['radarState'].leadOne
     if lead.present and not output_should_stop_e2e:
       try:
-        desired = get_safe_obstacle_distance(v_ego, get_T_FOLLOW(sm['selfdriveState'].personality))
+        desired = get_safe_obstacle_distance(v_ego, get_T_FOLLOW(sm['selfdriveState'].personality, v_ego))
         if lead.dRel > desired * 1.05 and -0.5 < output_a_target_e2e < 0.0:
           output_a_target_e2e = 0.0
         # C3XL: 前车很远（> 目标 1.15 倍）但 MPC 只是在"溜"（a > -0.05）时，
         # 让巡航的加速能赢得 min() —— 否则车永远追不上定速/拉不近车距。
         elif lead.dRel > desired * 1.15 and output_a_target_mpc > -0.05 and self.a_cruise > 0.05:
-          output_a_target_mpc = max(output_a_target_mpc, self.a_cruise)
+          # C3XL: 限幅到 1.0 m/s²，避免"加速猛"的推背感
+          output_a_target_mpc = max(output_a_target_mpc, min(self.a_cruise, 1.0))
       except Exception:
         pass
 

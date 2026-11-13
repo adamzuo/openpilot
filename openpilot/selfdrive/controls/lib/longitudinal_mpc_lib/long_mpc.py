@@ -71,8 +71,9 @@ def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
     raise NotImplementedError("Longitudinal personality not supported")
 
 
-def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
-  _o = c3xl_follow.t_follow_override()
+def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard, v_ego=None):
+  # C3XL: 传入 v_ego 时按车速放大时距（低速紧凑、高速拉开）
+  _o = c3xl_follow.t_follow_override(v_ego)
   if _o is not None:
     return _o
   if personality==log.LongitudinalPersonality.relaxed:
@@ -316,7 +317,7 @@ class LongitudinalMpc:
     return lead_xv
 
   def update(self, radarstate, personality=log.LongitudinalPersonality.standard):
-    t_follow = get_T_FOLLOW(personality)
+    t_follow = get_T_FOLLOW(personality, float(self.x0[1]))   # C3XL: 传入当前车速
 
     lead_xv_0 = self.process_lead(radarstate.leadOne)
     lead_xv_1 = self.process_lead(radarstate.leadTwo)
