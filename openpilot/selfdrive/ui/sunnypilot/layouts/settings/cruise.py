@@ -158,12 +158,12 @@ class CruiseLayout(Widget):
 
     self.c3xl_follow_profile = ListItemSP(
       title=tr("CFD"),
-      description=tr("CFD = C3XL Follow Distance Profile. 原厂(远)/温和/激进/折中/A紧/B更紧/C折中；7 档，切换【立即生效】不用重启。"),
+      description=tr("CFD = C3XL Follow Distance Profile. 0原厂 1温和 2居中 3激进 4紧 5居中紧 6极限紧；切换【立即生效】不用重启。"),
       action_item=CFDApplyControlSP(
         "C3XLFollowProfile", 0, 6, 1,
         lambda: True,
         label_width=90,
-        label_callback=lambda v: {0: "原厂", 1: "温和", 2: "激进", 3: "折中", 4: "A紧", 5: "B更紧", 6: "C折中"}.get(int(v), str(v)),
+        label_callback=lambda v: {0: "原厂", 1: "温和", 2: "居中", 3: "激进", 4: "紧", 5: "居中紧", 6: "极限紧"}.get(int(v), str(v)),
         on_restart=self._apply_follow_profile,
       ),
     )
