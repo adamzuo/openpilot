@@ -20,7 +20,8 @@ class ToyotaFlagsSP(IntFlag):
 # kiBP, kiV for the PCM accel PID with TSS2_SMOOTH
 # C3XL: <=80 km/h 保持积极(0.25)，>80 km/h 平缓降到 0.219
 # C3XL 20261111: 改回 sunnypilot 官方的 TSS2 smooth ki（原为 0.25/0.219 的调校）
-TSS2_SMOOTH_KI = ([0., 3., 5., 10., 25., 36.], [0.46, 0.46, 0.31, 0.22, 0.20, 0.19])
+# C3XL 20261113: 折中值（官方 0.46/0.19 与 我们的 0.25/0.219 之间，整体偏大）
+TSS2_SMOOTH_KI = ([0., 5., 10., 20., 28., 36.], [0.36, 0.32, 0.28, 0.27, 0.26, 0.23])
 
 
 class ToyotaSafetyFlagsSP:
