@@ -71,6 +71,9 @@ def get_cruise_accel(v_cruise, v_ego, a_cruise_prev, dt):
       jerk_scale = 0.4 if mode == 1 else 0.25
   j_cruise = np.interp(v_ego, J_CRUISE_BP, J_CRUISE_VALS) * jerk_scale
   target_accel = float(np.clip(target_accel, a_cruise_prev - j_cruise * dt, a_cruise_prev + j_cruise * dt))
+  # C3XL 20261114: 硬限幅 —— 巡航候选绝不能超过 A_CRUISE_MIN
+  # （之前 a_cruise 会从 reset 继承一个 -2.4 的旧值，jerk 限幅又让它慢慢退，导致顿挫）
+  target_accel = float(np.clip(target_accel, A_CRUISE_MIN, ACCEL_MAX))
 
   return target_accel
 
