@@ -65,7 +65,9 @@ def get_cruise_accel(v_cruise, v_ego, a_cruise_prev, dt):
       target_accel = -min(0.35 * (1.0 if mode == 1 else 0.6), 0.15 + 0.04 * over_kmh)
       jerk_scale = 0.4 if mode == 1 else 0.25
     else:
-      target_accel = -min(cap, 0.03 * (over_kmh - 5.0))
+      # C3XL 20261114: 原公式 0.03*(over-5) 在 over=6 时只有 -0.03，几乎不收 ✗
+      # 改成 0.15 起步 + 0.03 每 km/h → over=6 就 -0.18，能真的把速度收回来 ✓
+      target_accel = -min(cap, 0.15 + 0.03 * (over_kmh - 5.0))
       jerk_scale = 0.4 if mode == 1 else 0.25
   j_cruise = np.interp(v_ego, J_CRUISE_BP, J_CRUISE_VALS) * jerk_scale
   target_accel = float(np.clip(target_accel, a_cruise_prev - j_cruise * dt, a_cruise_prev + j_cruise * dt))
