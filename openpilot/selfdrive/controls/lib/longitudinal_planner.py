@@ -61,7 +61,8 @@ def get_cruise_accel(v_cruise, v_ego, a_cruise_prev, dt):
       target_accel = np.clip((v_cruise - v_ego) / A_CRUISE_T, A_CRUISE_MIN, ACCEL_MAX)
       jerk_scale = 1.0
     elif over_kmh <= 5.0:
-      target_accel = 0.0                      # 轻微超速：完全滑行（不主动刹车）
+      # C3XL 20261114: 小超速（下坡 N+3 那种）也主动收回来，不再干等
+      target_accel = -min(0.35 * (1.0 if mode == 1 else 0.6), 0.15 + 0.04 * over_kmh)
       jerk_scale = 0.4 if mode == 1 else 0.25
     else:
       target_accel = -min(cap, 0.03 * (over_kmh - 5.0))
@@ -168,9 +169,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           output_a_target_e2e = 0.0
         # C3XL: 前车很远（> 目标 1.15 倍）但 MPC 只是在"溜"（a > -0.05）时，
         # 让巡航的加速能赢得 min() —— 否则车永远追不上定速/拉不近车距。
-        elif lead.dRel > desired * 1.15 and output_a_target_mpc > -0.05 and self.a_cruise > 0.05:
-          # C3XL: 限幅到 1.0 m/s²，避免"加速猛"的推背感
-          output_a_target_mpc = max(output_a_target_mpc, min(self.a_cruise, 1.0))
+        elif (lead.dRel > desired * 1.15 and output_a_target_mpc > -0.05 and self.a_cruise > 0.05
+              and lead.vLead > v_ego + 1.0):
+          # C3XL: 只有【前车明显比我们快】时才追上去，且限幅 0.6 m/s²
+          # 否则"目视有前车还在加速"会让人害怕
+          output_a_target_mpc = max(output_a_target_mpc, min(self.a_cruise, 0.6))
       except Exception:
         pass
 
