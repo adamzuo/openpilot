@@ -23,6 +23,10 @@ J_CRUISE_BP = [0., 10.0, 25., 40.]
 A_CRUISE_MIN = -0.5
 A_CRUISE_T = 2 # target acceleration time horizon
 A_OUTPUT_JERK_MAX = 2.5   # C3XL: 输出加速度最大变化率 m/s3（抑制切入顿挫）
+# C3XL 20261118: 距离明显偏大时的"温和贴近"参数
+C3XL_CREEP_ACCEL = 0.35   # m/s²  很轻的贴近加速度
+C3XL_CREEP_DV = 5.0       # m/s   只有前车速度接近我们时才贴近
+C3XL_CREEP_MIN_V = 8.0    # m/s   低于 29km/h 不用（低速由 MPC 自己跟）
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
 
@@ -170,7 +174,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     lead = sm['radarState'].leadOne
     if lead.present and not output_should_stop_e2e:
       try:
-        desired = get_safe_obstacle_distance(v_ego, get_T_FOLLOW(sm['selfdriveState'].personality, v_ego))
+        _t = get_T_FOLLOW(sm['selfdriveState'].personality, v_ego)
+        desired = get_safe_obstacle_distance(v_ego, _t)
+        # 稳态目标 = T*v + STOP（前车同速时 v²/(2B) 项相消）
+        from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib import c3xl_follow as _cf
+        steady_target = _t * v_ego + _cf.stop_distance()
         if lead.dRel > desired * 1.05 and -0.5 < output_a_target_e2e < 0.0:
           output_a_target_e2e = 0.0
         # C3XL: 前车很远（> 目标 1.15 倍）但 MPC 只是在"溜"（a > -0.05）时，
@@ -180,6 +188,13 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           # C3XL: 只有【前车明显比我们快】时才追上去，且限幅 0.6 m/s²
           # 否则"目视有前车还在加速"会让人害怕
           output_a_target_mpc = max(output_a_target_mpc, min(self.a_cruise, 0.6))
+
+        # C3XL 20261118: MPC 的 V_EGO_COST=0，稳态跟车距离会稳定在目标的 1.7~2.9 倍 ✗
+        # （今早实测 70km/h 目标 20m、实际 48m）。这里在"明显偏大"时给一个
+        # 很温和的贴近加速度（0.35 m/s²），既不吓人也能把距离收回来。
+        elif (lead.dRel > steady_target * 1.35 and output_a_target_mpc > -0.05
+              and abs(lead.vLead - v_ego) < C3XL_CREEP_DV and v_ego > C3XL_CREEP_MIN_V):
+          output_a_target_mpc = max(output_a_target_mpc, C3XL_CREEP_ACCEL)
       except Exception:
         pass
 
