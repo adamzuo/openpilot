@@ -48,7 +48,7 @@ _T_SPEED_F  = [1.00, 1.00, 1.83, 2.60]
 # C3XL 20261119: 保底值随车速上升 —— 80km/h=1.50 → 120km/h=1.95
 T_HIGH_SPEED_MIN = 1.50       # 80 km/h 处的保底
 T_HIGH_SPEED_KNEE = 22.2      # m/s = 80 km/h
-T_HIGH_SPEED_SLOPE = 0.011    # 每 km/h 增加（80→120 增加 0.44）
+T_HIGH_SPEED_SLOPE = 0.016    # 每 km/h 增加（80→120 增加 0.64）
 
 
 def _speed_factor(v_ego: float) -> float:
