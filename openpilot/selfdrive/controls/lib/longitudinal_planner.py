@@ -23,7 +23,7 @@ J_CRUISE_BP = [0., 10.0, 25., 40.]
 A_CRUISE_MIN = -0.5
 A_CRUISE_T = 2 # target acceleration time horizon
 # C3XL 20261118: 输出加速度限变化率（非对称）
-A_OUTPUT_JERK_SOFT = 1.5    # m/s3  目标 > -1.5 时用（切入这种轻微减速 → 很平滑）
+A_OUTPUT_JERK_SOFT = 1.0    # m/s3  目标 > -1.5 时用（切入这种轻微减速 → 非常平滑）
 A_OUTPUT_JERK_HARD = 8.0    # m/s3  目标 < -1.5 时用（真急刹 → 不延误）
 A_OUTPUT_SOFT_BRAKE = 1.5   # m/s2  软/硬分界
 # C3XL 20261118: 距离明显偏大时的"温和贴近"参数

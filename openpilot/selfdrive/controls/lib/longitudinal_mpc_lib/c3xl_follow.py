@@ -45,8 +45,10 @@ def name() -> str:
 _T_SPEED_BP = [0.0, 11.1, 22.2, 33.3]
 _T_SPEED_F  = [1.00, 1.00, 1.83, 2.60]
 # 高速保底：车速 > 80km/h 时，实际时距不小于这个值（紧档也不会贴太近）
-T_HIGH_SPEED_MIN = 1.50
+# C3XL 20261119: 保底值随车速上升 —— 80km/h=1.50 → 120km/h=1.95
+T_HIGH_SPEED_MIN = 1.50       # 80 km/h 处的保底
 T_HIGH_SPEED_KNEE = 22.2      # m/s = 80 km/h
+T_HIGH_SPEED_SLOPE = 0.011    # 每 km/h 增加（80→120 增加 0.44）
 
 
 def _speed_factor(v_ego: float) -> float:
@@ -65,7 +67,9 @@ def t_follow_override(v_ego=None):
     return t
   t *= _speed_factor(v_ego)
   if v_ego > T_HIGH_SPEED_KNEE:
-    t = max(t, T_HIGH_SPEED_MIN)
+    # 保底值从 1.50（80km/h）线性升到 1.94（120km/h）
+    floor = T_HIGH_SPEED_MIN + max(0.0, v_ego * 3.6 - 80.0) * T_HIGH_SPEED_SLOPE
+    t = max(t, floor)
   return t
 
 
