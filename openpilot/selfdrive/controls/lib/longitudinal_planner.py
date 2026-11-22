@@ -23,9 +23,11 @@ J_CRUISE_BP = [0., 10.0, 25., 40.]
 A_CRUISE_MIN = -0.5
 A_CRUISE_T = 2 # target acceleration time horizon
 # C3XL 20261118: 输出加速度限变化率（非对称）
-A_OUTPUT_JERK_SOFT = 1.0    # m/s3  目标 > -1.5 时用（切入这种轻微减速 → 非常平滑）
-A_OUTPUT_JERK_HARD = 8.0    # m/s3  目标 < -1.5 时用（真急刹 → 不延误）
-A_OUTPUT_SOFT_BRAKE = 1.5   # m/s2  软/硬分界
+# C3XL 20261123: 输出加速度限变化率（连续渐变，不再阶跃）
+A_OUTPUT_JERK_SOFT = 1.0    # m/s3  轻微减速时（平滑）
+A_OUTPUT_JERK_HARD = 6.0    # m/s3  需要大力刹车时（仍不延误）
+A_OUTPUT_SOFT_BRAKE = 1.5   # m/s2  渐变起点（-1.5 以上都用 1.0）
+A_OUTPUT_HARD_BRAKE = 5.0   # m/s2  渐变终点（-5.0 以下都用 6.0）
 # C3XL 20261118: 距离明显偏大时的"温和贴近"参数
 C3XL_CREEP_ACCEL = 0.35   # m/s²  很轻的贴近加速度
 C3XL_CREEP_DV = 5.0       # m/s   只有前车速度接近我们时才贴近
@@ -210,13 +212,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_a_target, self.mpc.source, _ = min(candidates, key=lambda c: c[0])
     self.output_should_stop = any(should_stop for _, _, should_stop in candidates)
 
-    # C3XL 20261117/18: 输出级限变化率 —— 相邻车道车辆切入时 aTarget 会单帧掉 0.9+
-    # （实测 -0.51 / -0.68 / -0.90），这就是"刹车顿挫"。
-    # 20261118 改成【非对称】：轻微减速限得严（平滑），真正的急刹放宽（不延误）。
-    if output_a_target > -A_OUTPUT_SOFT_BRAKE:
-      j_max = A_OUTPUT_JERK_SOFT     # 只要不进入"急刹区"，就限得很严 → 切入顿挫很小
-    else:
-      j_max = A_OUTPUT_JERK_HARD     # 需要急刹时放宽 → 不延误安全
+    # C3XL 20261117/18/23: 输出级限变化率 —— 相邻车道车辆切入时 aTarget 会单帧掉 0.9+
+    # 20261123 关键修复：原来是【硬阶跃】（-1.5 以内 1.0，一过 -1.5 就跳到 8.0）✗
+    # 高速切入需要 -2~-3 的减速度 → 直接落进 8.0 分支 → 高速顿挫依旧 ✗
+    # 改成【连续渐变】：按需要的减速度线性放宽，不再有阶跃 ✓
+    _t = float(np.clip((-output_a_target - A_OUTPUT_SOFT_BRAKE) / (A_OUTPUT_HARD_BRAKE - A_OUTPUT_SOFT_BRAKE), 0.0, 1.0))
+    j_max = A_OUTPUT_JERK_SOFT + _t * (A_OUTPUT_JERK_HARD - A_OUTPUT_JERK_SOFT)
     max_delta = j_max * self.dt
     output_a_target = float(np.clip(output_a_target, a_prev - max_delta, a_prev + max_delta))
     self.output_a_target = np.clip(output_a_target, ACCEL_MIN, ACCEL_MAX)
