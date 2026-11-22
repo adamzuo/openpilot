@@ -192,10 +192,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           # 否则"目视有前车还在加速"会让人害怕
           output_a_target_mpc = max(output_a_target_mpc, min(self.a_cruise, 0.6))
 
-        # C3XL 20261118: MPC 的 V_EGO_COST=0，稳态跟车距离会稳定在目标的 1.7~2.9 倍 ✗
-        # （今早实测 70km/h 目标 20m、实际 48m）。这里在"明显偏大"时给一个
-        # 很温和的贴近加速度（0.35 m/s²），既不吓人也能把距离收回来。
-        elif (lead.dRel > steady_target * 1.35 and output_a_target_mpc > -0.05
+        # C3XL 20261118/23: MPC 的 V_EGO_COST=0，稳态跟车距离会稳定在目标的 1.7~2.9 倍 ✗
+        # 这里在"明显偏大"时给一个很温和的贴近加速度（0.35 m/s²）。
+        # ⚠️ 20261123 修复：原来是 elif，会被上面那条 e2e 死区分支吃掉 →
+        #    实测 40-60km/h 前车 48m（目标 19m）时 aTarget 仍只有 +0.01 ✗
+        #    改成【独立 if】后才会真正触发 ✓
+        if (lead.dRel > steady_target * 1.35 and output_a_target_mpc > -0.05
               and abs(lead.vLead - v_ego) < C3XL_CREEP_DV and v_ego > C3XL_CREEP_MIN_V):
           output_a_target_mpc = max(output_a_target_mpc, C3XL_CREEP_ACCEL)
       except Exception:
