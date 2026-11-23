@@ -22,6 +22,10 @@ J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 J_CRUISE_BP = [0., 10.0, 25., 40.]
 A_CRUISE_MIN = -0.5
 A_CRUISE_T = 2 # target acceleration time horizon
+# C3XL 20261124: 起步辅助（跟停后前车走了，起步偏肉）
+C3XL_LAUNCH_ACCEL = 0.9    # m/s²  起步允许的最大加速度
+C3XL_LAUNCH_V_MAX = 3.0    # m/s   只在 < 10.8 km/h 时生效
+C3XL_LAUNCH_LEAD_V = 0.5   # m/s   前车必须已经在动
 # C3XL 20261118: 输出加速度限变化率（非对称）
 # C3XL 20261123: 输出加速度限变化率（连续渐变，不再阶跃）
 A_OUTPUT_JERK_SOFT = 1.0    # m/s3  轻微减速时（平滑）
@@ -204,6 +208,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           output_a_target_mpc = max(output_a_target_mpc, C3XL_CREEP_ACCEL)
       except Exception:
         pass
+
+    # C3XL 20261124: 起步辅助 —— 跟停后前车走了，MPC 因为 V_EGO_COST=0 没有"起步压力"
+    # 表现：起步偏肉、要等前车拉开很远才动
+    # 在【低速 + 前车已经在动】时给一个温和的起步加速度（≤0.9 m/s²）
+    # 只在 v<10.8km/h 且前车确实在动时生效，其他场景完全不受影响
+    if (lead.present and not output_should_stop_e2e
+          and v_ego < C3XL_LAUNCH_V_MAX and lead.vLead > C3XL_LAUNCH_LEAD_V
+          and output_a_target_mpc < C3XL_LAUNCH_ACCEL * 0.5):
+      output_a_target_mpc = max(output_a_target_mpc, min(max(self.a_cruise, 0.0), C3XL_LAUNCH_ACCEL))
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop),
