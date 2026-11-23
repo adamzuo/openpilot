@@ -29,7 +29,7 @@ A_OUTPUT_JERK_HARD = 6.0    # m/s3  需要大力刹车时（仍不延误）
 A_OUTPUT_SOFT_BRAKE = 1.5   # m/s2  渐变起点（-1.5 以上都用 1.0）
 A_OUTPUT_HARD_BRAKE = 5.0   # m/s2  渐变终点（-5.0 以下都用 6.0）
 # C3XL 20261118: 距离明显偏大时的"温和贴近"参数
-C3XL_CREEP_ACCEL = 0.35   # m/s²  很轻的贴近加速度
+C3XL_CREEP_ACCEL = 0.50   # m/s²  贴近加速度（20261123 从 0.35 加强）
 C3XL_CREEP_DV = 5.0       # m/s   只有前车速度接近我们时才贴近
 C3XL_CREEP_MIN_V = 8.0    # m/s   低于 29km/h 不用（低速由 MPC 自己跟）
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
@@ -199,7 +199,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         # ⚠️ 20261123 修复：原来是 elif，会被上面那条 e2e 死区分支吃掉 →
         #    实测 40-60km/h 前车 48m（目标 19m）时 aTarget 仍只有 +0.01 ✗
         #    改成【独立 if】后才会真正触发 ✓
-        if (lead.dRel > steady_target * 1.35 and output_a_target_mpc > -0.05
+        if (lead.dRel > steady_target * 1.20 and output_a_target_mpc > -0.05
               and abs(lead.vLead - v_ego) < C3XL_CREEP_DV and v_ego > C3XL_CREEP_MIN_V):
           output_a_target_mpc = max(output_a_target_mpc, C3XL_CREEP_ACCEL)
       except Exception:

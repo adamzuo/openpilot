@@ -319,6 +319,17 @@ class LongitudinalMpc:
   def update(self, radarstate, personality=log.LongitudinalPersonality.standard):
     t_follow = get_T_FOLLOW(personality, float(self.x0[1]))   # C3XL: 传入当前车速
 
+    # C3XL 20261123c: 时距项改成【按前车速度】计算
+    # 问题：定速 100 跟 80 的车时，T·v_ego 用的是 100 的速度 ✗
+    #       → 目标距离 = (100²-80²)/2B + T·100 + STOP → 比实际需要远 20-25% ✗
+    # 修复：前车更慢时，把 t_follow 按 v_lead/v_ego 缩放 → T·v_lead ✓
+    #      这样车距按【前车实际速度】来定，符合"跟 80 的车就用 80 的时距"直觉 ✓
+    _ve = float(self.x0[1])
+    if radarstate.leadOne.present and _ve > 2.0:
+      _vl = float(radarstate.leadOne.vLead)
+      if _vl < _ve:
+        t_follow *= max(0.55, max(0.0, _vl) / _ve)
+
     lead_xv_0 = self.process_lead(radarstate.leadOne)
     lead_xv_1 = self.process_lead(radarstate.leadTwo)
 
