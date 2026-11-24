@@ -23,15 +23,16 @@ J_CRUISE_BP = [0., 10.0, 25., 40.]
 A_CRUISE_MIN = -0.5
 A_CRUISE_T = 2 # target acceleration time horizon
 # C3XL 20261124: 起步辅助（跟停后前车走了，起步偏肉）
-C3XL_LAUNCH_ACCEL = 0.9    # m/s²  起步允许的最大加速度
-C3XL_LAUNCH_V_MAX = 3.0    # m/s   只在 < 10.8 km/h 时生效
-C3XL_LAUNCH_LEAD_V = 0.5   # m/s   前车必须已经在动
+C3XL_LAUNCH_ACCEL = 1.2    # m/s²  起步最大加速度（20261124b 从 0.9 加强）
+C3XL_LAUNCH_V_MAX = 3.5    # m/s   只在 < 12.6 km/h 时生效
+C3XL_LAUNCH_LEAD_V = 0.3   # m/s   前车开始动即可（从 0.5 放宽）
 # C3XL 20261118: 输出加速度限变化率（非对称）
 # C3XL 20261123: 输出加速度限变化率（连续渐变，不再阶跃）
 A_OUTPUT_JERK_SOFT = 1.0    # m/s3  轻微减速时（平滑）
 A_OUTPUT_JERK_HARD = 6.0    # m/s3  需要大力刹车时（仍不延误）
 A_OUTPUT_SOFT_BRAKE = 1.5   # m/s2  渐变起点（-1.5 以上都用 1.0）
 A_OUTPUT_HARD_BRAKE = 5.0   # m/s2  渐变终点（-5.0 以下都用 6.0）
+A_OUTPUT_JERK_LAUNCH = 4.0  # m/s3  起步时允许的 jerk（原来是 1.0 ✗ 太慢）
 # C3XL 20261118: 距离明显偏大时的"温和贴近"参数
 C3XL_CREEP_ACCEL = 0.50   # m/s²  贴近加速度（20261123 从 0.35 加强）
 C3XL_CREEP_DV = 5.0       # m/s   只有前车速度接近我们时才贴近
@@ -105,6 +106,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.a_cruise = init_a
     self.output_a_target = init_a
     self.output_should_stop = False
+    self._c3xl_launching = False   # C3XL 起步辅助标志
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -213,10 +215,14 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # 表现：起步偏肉、要等前车拉开很远才动
     # 在【低速 + 前车已经在动】时给一个温和的起步加速度（≤0.9 m/s²）
     # 只在 v<10.8km/h 且前车确实在动时生效，其他场景完全不受影响
-    if (lead.present and not output_should_stop_e2e
-          and v_ego < C3XL_LAUNCH_V_MAX and lead.vLead > C3XL_LAUNCH_LEAD_V
+    self._c3xl_launching = False
+    if (lead.present and v_ego < C3XL_LAUNCH_V_MAX and lead.vLead > C3XL_LAUNCH_LEAD_V
           and output_a_target_mpc < C3XL_LAUNCH_ACCEL * 0.5):
       output_a_target_mpc = max(output_a_target_mpc, min(max(self.a_cruise, 0.0), C3XL_LAUNCH_ACCEL))
+      # 关键：起步时必须强制解除 MPC 的 shouldStop ✗
+      # 否则 should_stop(v_ego≈0, a≈0) 恒为 True → 车一直停着不动 → 就是你感觉的"慢 1 秒"
+      output_should_stop_mpc = False
+      self._c3xl_launching = True
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop),
@@ -231,6 +237,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # 改成【连续渐变】：按需要的减速度线性放宽，不再有阶跃 ✓
     _t = float(np.clip((-output_a_target - A_OUTPUT_SOFT_BRAKE) / (A_OUTPUT_HARD_BRAKE - A_OUTPUT_SOFT_BRAKE), 0.0, 1.0))
     j_max = A_OUTPUT_JERK_SOFT + _t * (A_OUTPUT_JERK_HARD - A_OUTPUT_JERK_SOFT)
+    if getattr(self, '_c3xl_launching', False):
+      j_max = max(j_max, A_OUTPUT_JERK_LAUNCH)   # 起步时放宽，否则起步要 1.2 秒才加上去 ✗
     max_delta = j_max * self.dt
     output_a_target = float(np.clip(output_a_target, a_prev - max_delta, a_prev + max_delta))
     self.output_a_target = np.clip(output_a_target, ACCEL_MIN, ACCEL_MAX)
