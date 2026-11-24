@@ -17,6 +17,7 @@ from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
+from openpilot.selfdrive.controls.lib.traffic_stop import C3XLTrafficStop
 
 J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 J_CRUISE_BP = [0., 10.0, 25., 40.]
@@ -106,7 +107,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.a_cruise = init_a
     self.output_a_target = init_a
     self.output_should_stop = False
-    self._c3xl_launching = False   # C3XL 起步辅助标志
+    self._c3xl_launching = False
+    self.traffic_stop = C3XLTrafficStop()   # C3XL 红绿灯辅助（文件开关 /data/c3xl_traffic.json）
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -224,9 +226,23 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       output_should_stop_mpc = False
       self._c3xl_launching = True
 
+    # C3XL 红绿灯辅助：用 modelV2 预测轨迹终点判断'前方停止线'
+    # 阶段 1：只作为一个【速度上限候选】参与 min()，不改 acados ✓ 不用编译 ✓
+    output_a_target_tl = None
+    try:
+      self.traffic_stop.update(sm['modelV2'], sm['carState'], sm['radarState'],
+                               v_ego, sm['carState'].aEgo, v_cruise)
+      if self.traffic_stop.output_v_target < 1e5:
+        a_tl = float(np.clip((self.traffic_stop.output_v_target - v_ego) / A_CRUISE_T, A_CRUISE_MIN, ACCEL_MAX))
+        output_a_target_tl = (a_tl, LongitudinalPlanSource.cruise, bool(self.traffic_stop.output_should_stop))
+    except Exception:
+      output_a_target_tl = None
+
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop),
                   (output_a_target_e2e, LongitudinalPlanSource.e2e, output_should_stop_e2e)]
+    if output_a_target_tl is not None:
+      candidates.append(output_a_target_tl)
 
     output_a_target, self.mpc.source, _ = min(candidates, key=lambda c: c[0])
     self.output_should_stop = any(should_stop for _, _, should_stop in candidates)
