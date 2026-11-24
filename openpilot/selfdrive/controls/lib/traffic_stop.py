@@ -162,7 +162,25 @@ class C3XLTrafficStop:
 
   # ---------- 文件开关 ----------
   def _load_switch(self):
+    """优先读 Params（菜单开关），文件作为后备/调试用"""
     import json
+    # ① Params（菜单）
+    try:
+      from openpilot.common.params import Params
+      if not hasattr(self, "_params"):
+        self._params = Params()
+      self.is_enabled = self._params.get_bool("C3XLTrafficStop")
+      # 菜单值是 0..10，5 = 标准（0 米）
+      adj = self._params.get("C3XLTrafficStopDist")
+      try:
+        raw = int(adj) if adj not in (None, b"", "") else 5
+      except Exception:
+        raw = 5
+      self.distance_adjust_m = float(np.clip(raw - 5, -5, 5))
+      return
+    except Exception:
+      pass
+    # ② 文件后备
     try:
       with open(SWITCH_FILE) as f:
         d = json.load(f)

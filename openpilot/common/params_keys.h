@@ -267,6 +267,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"C3XLAccelComp", {PERSISTENT | BACKUP, INT, "1"}},
     {"AccelBoostSP", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"C3XLOverrun", {PERSISTENT | BACKUP, INT, "1"}},
+    {"C3XLTrafficStop", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"C3XLTrafficStopDist", {PERSISTENT | BACKUP, INT, "0"}},
 
     {"BlindSpot", {PERSISTENT | BACKUP, BOOL, "0"}},
 

@@ -156,6 +156,22 @@ class CruiseLayout(Widget):
       description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlMap")
 
+    self.c3xl_traffic_stop = toggle_item_sp(
+      title=tr("红绿灯辅助"),
+      description=tr("用 modelV2 预测轨迹判断停止线（红绿灯/停车线）→ 自动减速停车。阶段1：仅速度上限，不干预跟车。"),
+      param="C3XLTrafficStop")
+
+    self.c3xl_traffic_dist = option_item_sp(
+      title=tr("红绿灯停止线微调"),
+      description=tr("5=标准；<5 停得更近，>5 停得更远（每格 1 米）"),
+      param="C3XLTrafficStopDist",
+      min_value=0, max_value=10, value_change_step=1,
+      label_width=260,
+      label_callback=lambda v: {0: "-5米", 1: "-4米", 2: "-3米", 3: "-2米", 4: "-1米",
+                                5: "标准", 6: "+1米", 7: "+2米", 8: "+3米", 9: "+4米",
+                                10: "+5米"}.get(int(v), str(v)),
+      inline=True)
+
     self.c3xl_follow_profile = ListItemSP(
       title=tr("CFD"),
       description=tr("CFD = C3XL Follow Distance Profile. 0原厂 1温和 2居中 3激进 4小紧 5中紧 6大紧；切换【立即生效】不用重启。"),
@@ -204,6 +220,8 @@ class CruiseLayout(Widget):
       self.c3xl_follow_profile,
       self.accel_boost_toggle,
       self.c3xl_overrun,
+      self.c3xl_traffic_stop,
+      self.c3xl_traffic_dist,
     ]
     return items
 
