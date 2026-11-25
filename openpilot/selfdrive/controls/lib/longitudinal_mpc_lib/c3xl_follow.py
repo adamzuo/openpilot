@@ -79,3 +79,17 @@ def stop_distance() -> float:
 
 def comfort_brake() -> float:
   return PROFILES[_index()][3]
+
+
+# C3XL 20261125: 驾驶风格只对【距离】做 ±15% 微调（CFD=0 时不生效，仍用官方 1.25/1.45/1.75）
+#   激进(aggressive) → 0.85（跟得最近 ✓）
+#   标准(standard)   → 1.00
+#   从容(relaxed)    → 1.15（跟得最远 ✓）
+PERSONALITY_FACTOR = {0: 0.85, 1: 1.00, 2: 1.15}
+
+
+def personality_factor(personality) -> float:
+  try:
+    return PERSONALITY_FACTOR.get(int(personality), 1.0)
+  except Exception:
+    return 1.0

@@ -75,7 +75,8 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard, v_ego=None):
   # C3XL: 传入 v_ego 时按车速放大时距（低速紧凑、高速拉开）
   _o = c3xl_follow.t_follow_override(v_ego)
   if _o is not None:
-    return _o
+    # C3XL 20261125: CFD 定基础距离，驾驶风格再 ±15% 微调（激进 ×0.85 最近 / 从容 ×1.15 最远）
+    return _o * c3xl_follow.personality_factor(personality)
   if personality==log.LongitudinalPersonality.relaxed:
     return 1.75
   elif personality==log.LongitudinalPersonality.standard:
